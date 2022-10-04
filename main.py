@@ -18,6 +18,7 @@ def get_args():
     parser.add_argument('--datahub_path', default='./datahub/')
     parser.add_argument('--warmup_model', default='cvar', help="required to be one of [base, mwuf, metaE, cvar, cvar_init]")
     parser.add_argument('--is_dropoutnet', type=bool, default=False, help="whether to use dropout net for pretrain")
+    parser.add_argument('--dropout_ratio', type=float, default=0.1, help="dropout ratio")
     parser.add_argument('--bsz', type=int, default=2048)
     parser.add_argument('--shuffle', type=int, default=1)
     parser.add_argument('--model_name', default='deepfm', help='backbone name, we implemented [fm, wd, deepfm, afn, ipnn, opnn, afm, dcn]')
@@ -77,7 +78,7 @@ def test(model, data_loader, device):
     scores_arr = np.array(scores)
     return roc_auc_score(labels, scores), f1_score(labels, (scores_arr > np.mean(scores_arr)).astype(np.float32).tolist())
 
-def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_path, log_interval=10, val_data_loader=None):
+def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_path, dropout_ratio, log_interval=10, val_data_loader=None):
     # train
     model.train()
     criterion = torch.nn.BCELoss()
@@ -88,15 +89,21 @@ def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_p
         total_loss = 0
         total_iters = len(data_loader) 
         for i, (features, label) in enumerate(data_loader):
-            if random.random() < 0.1:
-                bsz = label.shape[0]
-                item_emb = model.emb_layer['item_id']
-                origin_item_emb = item_emb(features['item_id']).squeeze(1)
-                mean_item_emb = torch.mean(item_emb.weight.data, dim=0, keepdims=True) \
-                                    .repeat(bsz, 1)
-                y = model.forward_with_item_id_emb(mean_item_emb, features)
+            bsz = label.shape[0]
+            indices = np.arange(bsz)
+            random.shuffle(indices)
+            dropout_size = int(bsz * dropout_ratio)
+            dropout_idx = indices[:dropout_size]
+            item_emb = model.emb_layer["item_id"]
+            origin_item_emb = item_emb(features["item_id"]).squeeze(1)
+            mean_item_emb = torch.mean(item_emb.weight.data, dim=0, keepdims=True).repeat(dropout_size, 1).to(device)
+            zero_item_emb = torch.zeros(dropout_size, origin_item_emb.shape[1]).to(device)
+            if random.random() < 0.5:
+                origin_item_emb[dropout_idx] = zero_item_emb
             else:
-                y = model(features)
+                origin_item_emb[dropout_idx] = mean_item_emb
+            y = model.forward_with_item_id_emb(origin_item_emb, features)
+
             loss = criterion(y, label.float())
             model.zero_grad()
             loss.backward()
@@ -143,6 +150,7 @@ def pretrain(dataset_name,
          weight_decay,
          device,
          save_dir,
+         dropout_ratio,
          is_dropoutnet=False):
     device = torch.device(device)
     save_dir = os.path.join(save_dir, model_name)
@@ -156,7 +164,7 @@ def pretrain(dataset_name,
     model.init()
     # pretrain
     if is_dropoutnet:
-        dropoutNet_train(model, dataloaders['train_base'], device, epoch, lr, weight_decay, save_path, val_data_loader=dataloaders['test'])
+        dropoutNet_train(model, dataloaders['train_base'], device, epoch, lr, weight_decay, save_path, dropout_ratio, val_data_loader=dataloaders['test'])
     else:
         train(model, dataloaders['train_base'], device, epoch, lr, weight_decay, save_path, val_data_loader=dataloaders['test'])
     print("="*20, 'pretrain {}'.format(model_name), "="*20)
@@ -438,7 +446,7 @@ if __name__ == '__main__':
         dataloaders = get_loaders(args.dataset_name, args.datahub_path, args.device, args.bsz, args.shuffle==1)
     else:
         model, dataloaders = pretrain(args.dataset_name, args.datahub_path, args.bsz, args.shuffle, args.model_name, \
-            args.epoch, args.lr, args.weight_decay, args.device, args.save_dir, args.is_dropoutnet)
+            args.epoch, args.lr, args.weight_decay, args.device, args.save_dir, args.dropout_ratio, args.is_dropoutnet)
         if len(args.pretrain_model_path) > 0:
             torch.save(model, model_path)
     # warmup train and test

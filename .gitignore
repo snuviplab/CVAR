@@ -3,3 +3,5 @@ chkpt/
 datahub/movielens1M/*.pkl
 datahub/taobaoAD/*.pkl
 pretrain_backbones/*
+*ipynb
+*sh
