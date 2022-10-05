@@ -288,22 +288,27 @@ class CVAR(nn.Module):
         self.output_emb_size = 0
         self.warmup_emb_layer = nn.ModuleDict()
         for item_f in item_features:
-            assert item_f in model.features, "unkown feature: {}".format(item_f)
+            assert item_f in model.features, "unknown feature: {}".format(item_f)
             size, type = self.model.description[item_f]
             if type == 'spr' or type == 'seq':
                 self.output_emb_size += emb_dim
                 self.warmup_emb_layer["warmup_{}".format(item_f)] = nn.Embedding(size, emb_dim)
             elif type == 'ctn':
                 self.output_emb_size += 1
+            elif type == 'pretrained':
+                self.output_emb_size += emb_dim
+                self.warmup_emb_layer["warmup_{}".format(item_f)] = nn.Linear(size, emb_dim)
             else:
                 raise ValueError('illegal feature tpye for warm: {}'.format(item_f))
             self.item_features.append(item_f) 
         self.origin_item_emb = self.model.emb_layer[self.item_id_name]
-        self.mean_encoder = nn.Linear(emb_dim, 16)
-        self.log_v_encoder = nn.Linear(emb_dim, 16)
-        self.mean_encoder_p = nn.Linear(self.output_emb_size, 16)
-        self.log_v_encoder_p = nn.Linear(self.output_emb_size, 16)
-        self.decoder = nn.Linear(17, 16)
+
+        encoding_dim = 16
+        self.mean_encoder = nn.Linear(emb_dim, encoding_dim)
+        self.log_v_encoder = nn.Linear(emb_dim, encoding_dim)
+        self.mean_encoder_p = nn.Linear(self.output_emb_size, encoding_dim)
+        self.log_v_encoder_p = nn.Linear(self.output_emb_size, encoding_dim)
+        self.decoder = nn.Linear(encoding_dim + 1, encoding_dim) # +1 => x_freq
         return
 
     def wasserstein(self, mean1, log_v1, mean2, log_v2):
@@ -350,6 +355,8 @@ class CVAR(nn.Module):
             elif type == 'seq':
                 emb = self.warmup_emb_layer[name](x) \
                         .sum(dim=1, keepdim=True).squeeze()
+            elif type == 'pretrained':
+                emb = self.warmup_emb_layer[name](x)
             else:
                 raise ValueError('illegal feature tpye for warm: {}'.format(item_f))
             item_embs.append(emb)

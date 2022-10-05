@@ -25,7 +25,7 @@ class Movielens1MbaseDataset(Dataset):
         for name, size, type in description:
             if type == 'spr' or type == 'seq':
                 self.name2array[name] = self.name2array[name].to(torch.long)
-            elif type == 'ctn':
+            elif type == 'ctn' or type == 'pretrained':
                 self.name2array[name] = self.name2array[name].to(torch.float32)
             elif type == 'label':
                 pass
@@ -62,15 +62,9 @@ class MovieLens1MColdStartDataLoader(object):
             else:
                 self.dataloaders[key] = DataLoader(Movielens1MbaseDataset(dataset_name, df, self.description, device), batch_size=bsz, shuffle=False)
         self.keys = list(self.dataloaders.keys())
-        self.item_features = ['item_id', 'year', 'title', 'genres', 'count']
+        self.item_features = [desc[0] for desc in self.description if desc[0] not in ["user_id", "rating"]]
                                 
 
     def __getitem__(self, name):
         assert name in self.keys, '{} not in keys of datasets'.format(name)
         return self.dataloaders[name]
-        
-        
-        
-
-        
-

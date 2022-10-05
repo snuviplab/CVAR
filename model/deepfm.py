@@ -30,6 +30,9 @@ class DeepFactorizationMachineModel(torch.nn.Module):
             elif type == 'seq':
                 self.emb_layer[name] = torch.nn.Embedding(size, embed_dim)
                 self.embed_output_dim += embed_dim
+            elif type == 'pretrained':
+                self.emb_layer[name] = torch.nn.Linear(size, embed_dim)
+                self.embed_output_dim += embed_dim
             elif type == 'label':
                 pass
             else:
@@ -76,6 +79,9 @@ class DeepFactorizationMachineModel(torch.nn.Module):
                 linears.append(self.ctn_linear_layer[name](x))
             elif type == 'seq':
                 embs.append(self.emb_layer[name](x).sum(dim=1, keepdims=True))
+            elif type == 'pretrained':
+                emb = self.emb_layer[name](x)
+                embs.append(emb.unsqueeze(axis=1))
             else:
                 raise ValueError('unkwon feature: {}'.format(name))
         emb = torch.concat([item_id_emb] + embs, dim=1)

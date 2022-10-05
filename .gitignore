@@ -3,5 +3,10 @@ chkpt/
 datahub/movielens1M/*.pkl
 datahub/taobaoAD/*.pkl
 pretrain_backbones/*
-*ipynb
+test.ipynb
 *sh
+*csv
+*dat
+*pkl
+*npy
+*log
