@@ -72,7 +72,7 @@ def test(model, data_loader, device):
     labels, scores, predicts = list(), list(), list()
     criterion = torch.nn.BCELoss()
     with torch.no_grad():
-        for _, (features, label) in enumerate(data_loader):
+        for _, (features, label) in enumerate(tqdm(data_loader)):
             features = {key: value.to(device) for key, value in features.items()}
             label = label.to(device)
             y = model(features)
@@ -83,6 +83,7 @@ def test(model, data_loader, device):
 
 def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_path, dropout_ratio, log_interval=10, val_data_loader=None):
     # train
+    print("TRAINING MODEL (DROPOUTNET) STARTS")
     model.train()
     criterion = torch.nn.BCELoss()
     optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), \
@@ -91,7 +92,8 @@ def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_p
         epoch_loss = 0.0
         total_loss = 0
         total_iters = len(data_loader) 
-        for i, (features, label) in enumerate(tqdm(data_loader)):
+        tqdm_dataloader = tqdm(data_loader)
+        for i, (features, label) in enumerate(tqdm_dataloader):
             bsz = label.shape[0]
             indices = np.arange(bsz)
             random.shuffle(indices)
@@ -113,17 +115,20 @@ def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_p
             optimizer.step()
             epoch_loss += loss.item()
             total_loss += loss.item()
-            if (i + 1) % log_interval == 0:
-                print("    iters {}/{} loss: {:.4f}".format(i + 1, total_iters + 1, total_loss/log_interval), end='\r')
-                total_loss = 0
-
-        auc, f1 = test(model, dataloaders["warm_val"], device)
+            tqdm_dataloader.set_description(
+                "Epoch {}, loss {:.3f} ".format(
+                    epoch_i, loss.item()
+                )
+            )
+        auc, f1 = test(model, val_data_loader, device)
         print("Epoch {}/{} loss: {:.4f} val_auc: {:.4f} val_F1: {:.4f}".format(
-            epoch_i, epoch, epoch_loss/total_iters), auc, f1, " " * 20)
+            epoch_i, epoch, epoch_loss/total_iters, auc, f1), " " * 20)
+    print("TRAINING MODEL (DROPOUTNET) DONE")
     return 
 
 def train(model, data_loader, device, epoch, lr, weight_decay, save_path, log_interval=10, val_data_loader=None):
     # train
+    print("TRAINING MODEL STARTS")
     model.train()
     criterion = torch.nn.BCELoss()
     optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), \
@@ -132,7 +137,8 @@ def train(model, data_loader, device, epoch, lr, weight_decay, save_path, log_in
         epoch_loss = 0.0
         total_loss = 0
         total_iters = len(data_loader) 
-        for i, (features, label) in enumerate(tqdm(data_loader)):
+        tqdm_dataloader = tqdm(data_loader)
+        for i, (features, label) in enumerate(tqdm_dataloader):
             y = model(features)
             loss = criterion(y, label.float())
             model.zero_grad()
@@ -140,13 +146,15 @@ def train(model, data_loader, device, epoch, lr, weight_decay, save_path, log_in
             optimizer.step()
             epoch_loss += loss.item()
             total_loss += loss.item()
-            if (i + 1) % log_interval == 0:
-                print("    Iter {}/{} loss: {:.4f}".format(i + 1, total_iters + 1, total_loss/log_interval), end='\r')
-                total_loss = 0
-
-        auc, f1 = test(model, dataloaders["warm_val"], device)
+            tqdm_dataloader.set_description(
+                "Epoch {}, loss {:.3f} ".format(
+                    epoch_i, loss.item()
+                )
+            )
+        auc, f1 = test(model, val_data_loader, device)
         print("Epoch {}/{} loss: {:.4f} val_auc: {:.4f} val_F1: {:.4f}".format(
-            epoch_i, epoch, epoch_loss/total_iters), auc, f1, " " * 20)
+            epoch_i, epoch, epoch_loss/total_iters, auc, f1), " " * 20)
+    print("TRAINING MODEL DONE")
     return 
 
 def pretrain(dataset_name, 
@@ -469,6 +477,7 @@ def cvar_simple(model,
     save_path = os.path.join(save_dir, 'model.pth')
 
     # train cvar
+    print("TRAINING CVAR")
     train_base = dataloaders['warm_train']
     warm_model = CVAR(model, 
                     warm_features=dataloaders.item_features,
@@ -499,6 +508,7 @@ def cvar_simple(model,
                         .format(i + 1, batch_num, a, b, c, d), end='\r')
 
     # warm-up item id embedding (inference)
+    print("WARM-UP ITEM ID EMBEDDING")
     test_loader = dataloaders["cold_val"]
     for (features, label) in test_loader:
         origin_item_id_emb = warm_model.model.emb_layer[warm_model.item_id_name].weight.data
@@ -507,6 +517,7 @@ def cvar_simple(model,
         origin_item_id_emb[indexes, ] = warm_item_id_emb
     
     # test
+    print("TEST WITH WARMED-UP EMBEDDINGS")
     auc_list = []
     f1_list = []
     auc, f1 = test(model, test_loader, device)
