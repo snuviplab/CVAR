@@ -539,21 +539,27 @@ if __name__ == '__main__':
         torch.manual_seed(args.seed)
         torch.cuda.manual_seed(args.seed)
     res = {}
-    print(args.model_name)
+    print("*"*20, "ENVIRONMENT", "*"*20)
+    for arg, value in args._get_kwargs():
+        print(f"{arg}: {value}")
+    print("*"*50)    
     torch.cuda.empty_cache()
     # load or train pretrain models
     drop_suffix = '-dropoutnet' if args.is_dropoutnet else ''
     model_path = os.path.join(args.pretrain_model_path, args.model_name + drop_suffix + '-{}-{}'.format(args.dataset_name, args.seed))
     if os.path.exists(model_path):
+        print(f"LOAD PRETRAINED BACKBONE MODEL: {args.model_name}")
         model = torch.load(model_path).to(args.device)
         dataloaders = get_loaders(args.dataset_name, args.datahub_path, args.device, args.bsz, args.shuffle==1)
     else:
+        print(f"TRAIN BACKBONE MODEL: {args.model_name}")
         model, dataloaders = pretrain(args.dataset_name, args.datahub_path, args.bsz, args.shuffle, args.model_name, \
             args.epoch, args.lr, args.weight_decay, args.device, args.save_dir, args.dropout_ratio, args.is_dropoutnet)
         if len(args.pretrain_model_path) > 0:
             torch.save(model, model_path)
             
     # warmup train and test
+    print("WARMUP TRAIN STARTS")
     avg_auc_list, avg_f1_list = [], []
     for i in range(args.runs):
         model_v = copy.deepcopy(model).to(args.device)
