@@ -85,6 +85,37 @@ def test(model, data_loader, device):
     scores_arr = np.array(scores)
     return roc_auc_score(labels, scores), f1_score(labels, (scores_arr > np.mean(scores_arr)).astype(np.float32).tolist())
 
+def test_ranking(model, data_loader, topk=10):
+    topk = 10
+    length = len(data_loader)
+    sum_num_hit, precision, recall, ndcg = 0, 0, 0, 0
+    for features, label in tqdm(data_loader):
+        features = {k: v.squeeze(0) for k, v in features.items()}
+        pos_items = torch.Tensor(label).cpu().numpy()
+        num_pos = len(pos_items)
+
+        score = model(features)
+        item_indices = score.cpu().detach().numpy().argsort()[-topk:][::-1]
+        top_items = features["item_id"].squeeze().detach().numpy()[item_indices]
+
+        num_hit = len(np.intersect1d(pos_items, top_items))
+        sum_num_hit += num_hit
+        precision += float(num_hit / topk)
+        recall += float(num_hit / num_pos)
+
+        ndcg_score = 0.0
+        max_ndcg_score = 0.0
+        for i in range(min(num_pos, topk)):
+            max_ndcg_score += 1 / np.log2(i + 2)
+        if max_ndcg_score == 0:
+            continue
+        for i, temp_item in enumerate(top_items):
+            if temp_item in pos_items:
+                ndcg_score += 1 / np.log2(i+2)
+        ndcg += ndcg_score / max_ndcg_score
+    precision, recall, ndcg_score = precision / length, recall / length, ndcg / length
+
+
 def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_path, dropout_ratio, log_interval=10, val_data_loader=None):
     # train
     logger.info("TRAINING MODEL (DROPOUTNET) STARTS")
@@ -124,9 +155,10 @@ def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_p
                     epoch_i, loss.item()
                 )
             )
-        auc, f1 = test(model, val_data_loader, device)
-        logger.info("Epoch {}/{} loss: {:.4f} val_auc: {:.4f} val_F1: {:.4f}".format(
-            epoch_i, epoch, epoch_loss/total_iters, auc, f1))
+        precision, recall, ndcg_score = test_ranking(model, val_data_loader)
+        val_result = "prec@{}: {:.4f} rec@{}: {:4f} ndcg@{}: {:4f}".format(
+            topk, precision, topk, recall, topk, ndcg_score
+        )
     logger.info("TRAINING MODEL (DROPOUTNET) DONE")
     return 
 

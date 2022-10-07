@@ -56,6 +56,55 @@ class Movielens1MbaseDataset(Dataset):
         return self.length
 
 
+class ColdDataset(Dataset):
+    def __init__(self, dataset_name, df, content, description, device):
+        super(ColdDataset, self).__init__()
+        self.dataset_name = dataset_name
+        self.df = df
+        self.content = content
+        self.description = description
+        self.device = device
+        self.item_features = self.get_item_features()
+        self.num_items = len(self.item_features)
+        self.user2items = df.groupby("user_id")["item_id"].apply(list).reset_index(name="item_pos")
+
+    def get_item_features(self):
+        item_features = self.df.groupby("item_id", as_index=False).first()[["item_id", "count"]]
+        text_features = []
+        video_features = []
+        for item in item_features["item_id"]:
+            text_features.append(self.content[item]["text"])
+            video_features.append(self.content[item]["video"])
+        item_features["text"] = text_features
+        item_features["video"] = video_features  
+        return item_features
+    
+    def __getitem__(self, index):
+        user_id = self.user2items["user_id"].iloc[index]
+        item_pos = self.user2items["item_pos"].iloc[index]
+        x_dict = {}
+        for name in self.item_features.columns:
+            x_dict[name] = torch.from_numpy(np.array(list(self.item_features[name])).reshape([self.num_items, -1])).to(self.device)
+        x_dict["user_id"] = torch.from_numpy(np.repeat(user_id, self.num_items).reshape([self.num_items, -1])).to(self.device)
+        self.format(x_dict)
+        return x_dict, item_pos
+
+    def format(self, x_dict):
+        for name, size, type in self.description:
+            if type == 'spr' or type == 'seq':
+                x_dict[name] = x_dict[name].to(torch.long)
+            elif type == 'ctn' or type == 'pretrained':
+                x_dict[name] = x_dict[name].to(torch.float32)
+            elif type == 'label':
+                pass
+            else:
+                raise ValueError('unknwon type {}'.format(type))
+        return x_dict
+
+    def __len__(self):
+        return len(self.user2items)
+
+
 class MovieLens1MColdStartDataLoader(object):
     """
     Load all splitted MovieLens 1M Dataset for cold start setting
@@ -72,9 +121,11 @@ class MovieLens1MColdStartDataLoader(object):
         self.description = data['description']
         self.content = data["content_features"]
         for key, df in data.items():
-            if key in ["warm_test", "description", "content_features"]:
+            if key.startswith("cold"):
+                self.dataloaders[key] = DataLoader(ColdDataset(dataset_name, df, self.content, self.description, device), batch_size=1, shuffle=False)
+            elif key in ["warm_test", "description", "content_features"]:
                 continue
-            if 'metaE' not in key:
+            elif 'metaE' not in key:
                 self.dataloaders[key] = DataLoader(Movielens1MbaseDataset(dataset_name, df, self.content, self.description, device), batch_size=bsz, shuffle=shuffle)
             else:
                 self.dataloaders[key] = DataLoader(Movielens1MbaseDataset(dataset_name, df, self.description, device), batch_size=bsz, shuffle=False)
