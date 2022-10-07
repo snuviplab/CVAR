@@ -474,7 +474,7 @@ def cvar_simple(model,
         device,
         save_dir,
         only_init=False,
-        logger=False):
+        logging=False):
     logger.info("*"*20 + "cvar" + "*"*20)
     device = torch.device(device)
     save_dir = os.path.join(save_dir, model_name)
@@ -500,7 +500,8 @@ def cvar_simple(model,
     test_dataset_name = "cold_val"
     test_loader = dataloaders[test_dataset_name]
     for e in range(epochs):
-        for i, (features, label) in enumerate(train_base):
+        tqdm_dataloader = tqdm(train_base)
+        for i, (features, label) in enumerate(tqdm_dataloader):
             a, b, c, d = 0.0, 0.0, 0.0, 0.0
             for _ in range(cvar_iters):
                 target, recon_term, reg_term  = warm_model(features)
@@ -511,9 +512,11 @@ def cvar_simple(model,
                 optimizer.step()
                 a, b, c, d = a + loss.item(), b + main_loss.item(), c + recon_term.item(), d + reg_term.item()
             a, b, c, d = a/cvar_iters, b/cvar_iters, c/cvar_iters, d/cvar_iters
-            if logger and (i + 1) % 10 == 0:
-                logger.info("    Iter {}/{}, loss: {:.4f}, main loss: {:.4f}, recon loss: {:.4f}, reg loss: {:.4f}" \
-                        .format(i + 1, batch_num, a, b, c, d), end='\r')
+            tqdm_dataloader.set_description(
+                "Epoch {}, loss: {:.4f}, main loss: {:.4f}, recon loss: {:.4f}, reg loss: {:.4f}".format(
+                    e + 1, a, b, c, d
+                )
+            )
         auc, f1 = cvar_test(test_dataset_name, test_loader, model, warm_model, device)
         logger.info("[Epoch {}] evaluate on [{} dataset] auc: {:.4f}, F1 score: {:.4f}".format(e + 1, test_dataset_name, auc, f1))
 
