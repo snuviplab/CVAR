@@ -15,26 +15,38 @@ class Movielens1MbaseDataset(Dataset):
         self.dataset_name = dataset_name
         self.df = df
         self.length = len(df)
-        self.name2array = {name: torch.from_numpy(np.array(list(df[name])).reshape([self.length, -1])).to(device) \
-                                        for name in df.columns}
+        self.name2array = {}
+        for name in df.columns:
+            if name == "video" or name == "text":
+                self.name2array[name] = np.array(list(df[name]), dtype=np.float16)
+            else:
+                self.name2array[name] = torch.from_numpy(np.array(list(df[name])).reshape([self.length, -1])).to(device)
         self.format(description)
         self.features = [name for name in df.columns if name != 'rating']
         self.label = 'rating'
+        self.device = device
 
     def format(self, description):
         for name, size, type in description:
             if type == 'spr' or type == 'seq':
                 self.name2array[name] = self.name2array[name].to(torch.long)
-            elif type == 'ctn' or type == 'pretrained':
+            elif type == 'ctn':
                 self.name2array[name] = self.name2array[name].to(torch.float32)
+            elif type == 'pretrained':
+                pass
             elif type == 'label':
                 pass
             else:
                 raise ValueError('unkwon type {}'.format(type))
                 
     def __getitem__(self, index):
-        return {name: self.name2array[name][index] for name in self.features}, \
-                self.name2array[self.label][index].squeeze()
+        x_dict = {}
+        for name in self.features:
+            if name == "video" or name == "text":
+                x_dict[name] = torch.from_numpy(self.name2array[name][index]).to(self.device).to(torch.float32)
+            else:
+                x_dict[name] = self.name2array[name][index]
+        return x_dict, self.name2array[self.label][index].squeeze()
 
     def __len__(self):
         return self.length
@@ -55,6 +67,8 @@ class MovieLens1MColdStartDataLoader(object):
         self.dataloaders = {}
         self.description = data['description']
         for key, df in data.items():
+            if key == "warm_test":
+                continue
             if key == 'description':
                 continue
             if 'metaE' not in key:

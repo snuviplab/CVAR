@@ -173,7 +173,9 @@ def pretrain(dataset_name,
     save_dir = os.path.join(save_dir, model_name)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
+    print("GET DATALOADER")
     dataloaders = get_loaders(dataset_name, datahub_name, device, bsz, shuffle==1)
+    print("GET DATALOADER DONE")
     model = get_model(model_name, dataloaders).to(device)
     save_path = os.path.join(save_dir, 'model.pth')
     print("="*20, 'pretrain {}'.format(model_name), "="*20)
