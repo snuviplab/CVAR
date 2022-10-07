@@ -7,10 +7,14 @@ import numpy as np
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score, f1_score
 import argparse
+from logger import Logger
 from data import MovieLens1MColdStartDataLoader, TaobaoADColdStartDataLoader
 from model import FactorizationMachineModel, WideAndDeep, DeepFactorizationMachineModel, AdaptiveFactorizationNetwork, ProductNeuralNetworkModel
 from model import AttentionalFactorizationMachineModel, DeepCrossNetworkModel, MWUF, MetaE, CVAR
 from model.wd import WideAndDeep
+
+Logger.initialize()
+logger = Logger.get_logger()
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -30,7 +34,7 @@ def get_args():
     parser.add_argument('--cvar_iters', type=int, default=10)
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--weight_decay', type=float, default=1e-6)
-    parser.add_argument('--device', default='cuda:0')
+    parser.add_argument('--device', default='cuda:0' if torch.cuda.is_availabe() else 'cpu')
     parser.add_argument('--save_dir', default='chkpt')
     parser.add_argument('--runs', type=int, default=3, help = 'number of executions to compute the average metrics')
     parser.add_argument('--seed', type=int, default=1234)
@@ -83,7 +87,7 @@ def test(model, data_loader, device):
 
 def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_path, dropout_ratio, log_interval=10, val_data_loader=None):
     # train
-    print("TRAINING MODEL (DROPOUTNET) STARTS")
+    logger.info("TRAINING MODEL (DROPOUTNET) STARTS")
     model.train()
     criterion = torch.nn.BCELoss()
     optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), \
@@ -121,14 +125,14 @@ def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_p
                 )
             )
         auc, f1 = test(model, val_data_loader, device)
-        print("Epoch {}/{} loss: {:.4f} val_auc: {:.4f} val_F1: {:.4f}".format(
+        logger.info("Epoch {}/{} loss: {:.4f} val_auc: {:.4f} val_F1: {:.4f}".format(
             epoch_i, epoch, epoch_loss/total_iters, auc, f1), " " * 20)
-    print("TRAINING MODEL (DROPOUTNET) DONE")
+    logger.info("TRAINING MODEL (DROPOUTNET) DONE")
     return 
 
 def train(model, data_loader, device, epoch, lr, weight_decay, save_path, log_interval=10, val_data_loader=None):
     # train
-    print("TRAINING MODEL STARTS")
+    logger.info("TRAINING MODEL STARTS")
     model.train()
     criterion = torch.nn.BCELoss()
     optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), \
@@ -152,9 +156,9 @@ def train(model, data_loader, device, epoch, lr, weight_decay, save_path, log_in
                 )
             )
         auc, f1 = test(model, val_data_loader, device)
-        print("Epoch {}/{} loss: {:.4f} val_auc: {:.4f} val_F1: {:.4f}".format(
+        logger.info("Epoch {}/{} loss: {:.4f} val_auc: {:.4f} val_F1: {:.4f}".format(
             epoch_i, epoch, epoch_loss/total_iters, auc, f1), " " * 20)
-    print("TRAINING MODEL DONE")
+    logger.info("TRAINING MODEL DONE")
     return 
 
 def pretrain(dataset_name, 
@@ -173,12 +177,12 @@ def pretrain(dataset_name,
     save_dir = os.path.join(save_dir, model_name)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
-    print("GET DATALOADER")
+    logger.info("GET DATALOADER")
     dataloaders = get_loaders(dataset_name, datahub_name, device, bsz, shuffle==1)
-    print("GET DATALOADER DONE")
+    logger.info("GET DATALOADER DONE")
     model = get_model(model_name, dataloaders).to(device)
     save_path = os.path.join(save_dir, 'model.pth')
-    print("="*20, 'pretrain {}'.format(model_name), "="*20)
+    logger.info("="*20, 'pretrain {}'.format(model_name), "="*20)
     # init parameters
     model.init()
     # pretrain
@@ -186,7 +190,7 @@ def pretrain(dataset_name,
         dropoutNet_train(model, dataloaders['warm_train'], device, epoch, lr, weight_decay, save_path, dropout_ratio, val_data_loader=dataloaders['warm_val'])
     else:
         train(model, dataloaders['warm_train'], device, epoch, lr, weight_decay, save_path, val_data_loader=dataloaders['warm_val'])
-    print("="*20, 'pretrain {}'.format(model_name), "="*20)
+    logger.info("="*20, 'pretrain {}'.format(model_name), "="*20)
     return model, dataloaders
 
 def base(model,
@@ -197,7 +201,7 @@ def base(model,
          weight_decay,
          device,
          save_dir):
-    print("*"*20, "base", "*"*20)
+    logger.info("*"*20, "base", "*"*20)
     device = torch.device(device)
     save_dir = os.path.join(save_dir, model_name)
     save_path = os.path.join(save_dir, 'model.pth')
@@ -211,11 +215,11 @@ def base(model,
         auc, f1 = test(model, dataloaders['test'], device)
         auc_list.append(auc.item())
         f1_list.append(f1.item())
-        print("[base model] evaluate on [test dataset] auc: {:.4f}, F1 socre: {:.4f}".format(auc, f1))
+        logger.info("[base model] evaluate on [test dataset] auc: {:.4f}, F1 socre: {:.4f}".format(auc, f1))
         if i < 3:
             model.only_optimize_itemid()
             train(model, dataloaders[train_s], device, epoch, lr, weight_decay, save_path)
-    print("*"*20, "base", "*"*20)
+    logger.info("*"*20, "base", "*"*20)
     return auc_list, f1_list
 
 def base_test(model,
@@ -226,7 +230,7 @@ def base_test(model,
         weight_decay,
         device,
         save_dir):
-    print("*"*20, "base", "*"*20)
+    logger.info("*"*20, "base", "*"*20)
     device = torch.device(device)
     save_dir = os.path.join(save_dir, model_name)
     save_path = os.path.join(save_dir, 'model.pth')
@@ -238,8 +242,8 @@ def base_test(model,
     auc, f1 = test(model, dataloaders["cold_val"], device)
     auc_list.append(auc.item())
     f1_list.append(f1.item())
-    print("[base model] evaluate on [cold dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
-    print("*"*20, "base", "*"*20)
+    logger.info("[base model] evaluate on [cold dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
+    logger.info("*"*20, "base", "*"*20)
     return auc_list, f1_list
 
 def metaE(model,
@@ -250,7 +254,7 @@ def metaE(model,
           weight_decay,
           device,
           save_dir):
-    print("*"*20, "metaE", "*"*20)
+    logger.info("*"*20, "metaE", "*"*20)
     device = torch.device(device)
     save_dir = os.path.join(save_dir, model_name)
     if not os.path.exists(save_dir):
@@ -282,8 +286,8 @@ def metaE(model,
             optimizer.step()
             epoch_loss += loss
             if (i + 1) % 10 == 0:
-                print("    iters {}/{}, loss: {:.4f}, loss_a: {:.4f}, loss_b: {:.4f}".format(i + 1, int(total_iter_num), loss, loss_a, loss_b), end='\r')
-        print("Epoch {}/{} loss: {:.4f}".format(epoch_i, epoch, epoch_loss/total_iter_num), " " * 100)
+                logger.info("    iters {}/{}, loss: {:.4f}, loss_a: {:.4f}, loss_b: {:.4f}".format(i + 1, int(total_iter_num), loss, loss_a, loss_b), end='\r')
+        logger.info("Epoch {}/{} loss: {:.4f}".format(epoch_i, epoch, epoch_loss/total_iter_num), " " * 100)
     # replace item id embedding with warmed itemid embedding
     train_a = dataloaders['train_warm_a']
     for (features, label) in train_a:
@@ -296,16 +300,16 @@ def metaE(model,
     auc_list = []
     f1_list = []
     for i, train_s in enumerate(dataset_list):
-        print("#"*10, dataset_list[i],'#'*10)
+        logger.info("#"*10, dataset_list[i],'#'*10)
         train_s = dataset_list[i]
         auc, f1 = test(metaE_model.model, dataloaders['test'], device)
         auc_list.append(auc.item())
         f1_list.append(f1.item())
-        print("[metaE] evaluate on [test dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
+        logger.info("[metaE] evaluate on [test dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
         if i < len(dataset_list) - 1:
             metaE_model.model.only_optimize_itemid()
             train(metaE_model.model, dataloaders[train_s], device, epoch, lr, weight_decay, save_path)
-    print("*"*20, "metaE", "*"*20)
+    logger.info("*"*20, "metaE", "*"*20)
     return auc_list, f1_list
 
 def mwuf(model,
@@ -316,7 +320,7 @@ def mwuf(model,
          weight_decay,
          device,
          save_dir):
-    print("*"*20, "mwuf", "*"*20)
+    logger.info("*"*20, "mwuf", "*"*20)
     device = torch.device(device)
     save_dir = os.path.join(save_dir, model_name)
     if not os.path.exists(save_dir):
@@ -357,10 +361,10 @@ def mwuf(model,
         loss_1 += cold_loss
         loss_2 += warm_loss
         if (i + 1) % 10 == 0:
-            print("    iters {}/{}  warm loss: {:.4f}" \
+            logger.info("    iters {}/{}  warm loss: {:.4f}" \
                     .format(i + 1, int(total_iters), \
                      warm_loss.item()), end='\r')
-    print("final average warmup loss: cold-loss: {:.4f}, warm-loss: {:.4f}"
+    logger.info("final average warmup loss: cold-loss: {:.4f}, warm-loss: {:.4f}"
                     .format(loss_1/total_iters, loss_2/total_iters))
     # use trained meta scale and shift to initialize embedding of new items
     train_a = dataloaders['train_warm_a']
@@ -374,16 +378,16 @@ def mwuf(model,
     auc_list = []
     f1_list = []
     for i, train_s in enumerate(dataset_list):
-        print("#"*10, dataset_list[i],'#'*10)
+        logger.info("#"*10, dataset_list[i],'#'*10)
         train_s = dataset_list[i]
         auc, f1 = test(mwuf_model.model, dataloaders['test'], device)
         auc_list.append(auc.item())
         f1_list.append(f1.item())
-        print("[mwuf] evaluate on [test dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
+        logger.info("[mwuf] evaluate on [test dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
         if i < len(dataset_list) - 1:
             mwuf_model.model.only_optimize_itemid()
             train(mwuf_model.model, dataloaders[train_s], device, epoch, lr, weight_decay, save_path)
-    print("*"*20, "mwuf", "*"*20)
+    logger.info("*"*20, "mwuf", "*"*20)
     return auc_list, f1_list
 
 def cvar(model,
@@ -397,7 +401,7 @@ def cvar(model,
        device,
        save_dir,
        only_init=False):
-    print("*"*20, "cvar", "*"*20)
+    logger.info("*"*20, "cvar", "*"*20)
     device = torch.device(device)
     save_dir = os.path.join(save_dir, model_name)
     if not os.path.exists(save_dir):
@@ -431,7 +435,7 @@ def cvar(model,
                     a, b, c, d = a + loss.item(), b + main_loss.item(), c + recon_term.item(), d + reg_term.item()
                 a, b, c, d = a/iters, b/iters, c/iters, d/iters
                 if logger and (i + 1) % 10 == 0:
-                    print("    Iter {}/{}, loss: {:.4f}, main loss: {:.4f}, recon loss: {:.4f}, reg loss: {:.4f}" \
+                    logger.info("    Iter {}/{}, loss: {:.4f}, main loss: {:.4f}, recon loss: {:.4f}, reg loss: {:.4f}" \
                             .format(i + 1, batch_num, a, b, c, d), end='\r')
         # warm-up item id embedding
         train_a = dataloaders['train_warm_a']
@@ -445,18 +449,18 @@ def cvar(model,
     dataset_list = ['train_warm_a', 'train_warm_b', 'train_warm_c', 'test']
     auc_list, f1_list = [], []
     for i, train_s in enumerate(dataset_list):
-        print("#"*10, dataset_list[i],'#'*10)
+        logger.info("#"*10, dataset_list[i],'#'*10)
         train_s = dataset_list[i]
         auc, f1 = test(warm_model.model, dataloaders['test'], device)
         auc_list.append(auc.item())
         f1_list.append(f1.item())
-        print("[cvar] evaluate on [test dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
+        logger.info("[cvar] evaluate on [test dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
         if i < len(dataset_list) - 1:
             warm_model.model.only_optimize_itemid()
             train(warm_model.model, dataloaders[train_s], device, epoch, lr, weight_decay, save_path)
             if not only_init:
                 warm_up(dataloaders[train_s], epochs=cvar_epochs, iters=cvar_iters, logger=False)
-    print("*"*20, "cvar", "*"*20)
+    logger.info("*"*20, "cvar", "*"*20)
     return auc_list, f1_list
 
 def cvar_simple(model,
@@ -471,7 +475,7 @@ def cvar_simple(model,
         save_dir,
         only_init=False,
         logger=False):
-    print("*"*20, "cvar", "*"*20)
+    logger.info("*"*20, "cvar", "*"*20)
     device = torch.device(device)
     save_dir = os.path.join(save_dir, model_name)
     if not os.path.exists(save_dir):
@@ -479,7 +483,7 @@ def cvar_simple(model,
     save_path = os.path.join(save_dir, 'model.pth')
 
     # train cvar
-    print("TRAINING CVAR")
+    logger.info("TRAINING CVAR")
     train_base = dataloaders['warm_train']
     warm_model = CVAR(model, 
                     warm_features=dataloaders.item_features,
@@ -506,11 +510,11 @@ def cvar_simple(model,
                 a, b, c, d = a + loss.item(), b + main_loss.item(), c + recon_term.item(), d + reg_term.item()
             a, b, c, d = a/cvar_iters, b/cvar_iters, c/cvar_iters, d/cvar_iters
             if logger and (i + 1) % 10 == 0:
-                print("    Iter {}/{}, loss: {:.4f}, main loss: {:.4f}, recon loss: {:.4f}, reg loss: {:.4f}" \
+                logger.info("    Iter {}/{}, loss: {:.4f}, main loss: {:.4f}, recon loss: {:.4f}, reg loss: {:.4f}" \
                         .format(i + 1, batch_num, a, b, c, d), end='\r')
 
     # warm-up item id embedding (inference)
-    print("WARM-UP ITEM ID EMBEDDING")
+    logger.info("WARM-UP ITEM ID EMBEDDING")
     test_loader = dataloaders["cold_val"]
     for (features, label) in test_loader:
         origin_item_id_emb = warm_model.model.emb_layer[warm_model.item_id_name].weight.data
@@ -519,14 +523,14 @@ def cvar_simple(model,
         origin_item_id_emb[indexes, ] = warm_item_id_emb
     
     # test
-    print("TEST WITH WARMED-UP EMBEDDINGS")
+    logger.info("TEST WITH WARMED-UP EMBEDDINGS")
     auc_list = []
     f1_list = []
     auc, f1 = test(model, test_loader, device)
     auc_list.append(auc.item())
     f1_list.append(f1.item())
-    print("[cvar] evaluate on [cold dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
-    print("*"*20, "base", "*"*20)
+    logger.info("[cvar] evaluate on [cold dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
+    logger.info("*"*20, "base", "*"*20)
     return auc_list, f1_list
 
 def run(model, dataloaders, args, model_name, warm):
@@ -552,27 +556,27 @@ if __name__ == '__main__':
         torch.manual_seed(args.seed)
         torch.cuda.manual_seed(args.seed)
     res = {}
-    print("*"*20, "ENVIRONMENT", "*"*20)
+    logger.info("*"*20, "ENVIRONMENT", "*"*20)
     for arg, value in args._get_kwargs():
-        print(f"{arg}: {value}")
-    print("*"*50)    
+        logger.info(f"{arg}: {value}")
+    logger.info("*"*50)    
     torch.cuda.empty_cache()
     # load or train pretrain models
     drop_suffix = '-dropoutnet' if args.is_dropoutnet else ''
     model_path = os.path.join(args.pretrain_model_path, args.model_name + drop_suffix + '-{}-{}'.format(args.dataset_name, args.seed))
     if os.path.exists(model_path):
-        print(f"LOAD PRETRAINED BACKBONE MODEL: {args.model_name}")
+        logger.info(f"LOAD PRETRAINED BACKBONE MODEL: {args.model_name}")
         model = torch.load(model_path).to(args.device)
         dataloaders = get_loaders(args.dataset_name, args.datahub_path, args.device, args.bsz, args.shuffle==1)
     else:
-        print(f"TRAIN BACKBONE MODEL: {args.model_name}")
+        logger.info(f"TRAIN BACKBONE MODEL: {args.model_name}")
         model, dataloaders = pretrain(args.dataset_name, args.datahub_path, args.bsz, args.shuffle, args.model_name, \
             args.epoch, args.lr, args.weight_decay, args.device, args.save_dir, args.dropout_ratio, args.is_dropoutnet)
         if len(args.pretrain_model_path) > 0:
             torch.save(model, model_path)
             
     # warmup train and test
-    print("WARMUP TRAIN STARTS")
+    logger.info("WARMUP TRAIN STARTS")
     avg_auc_list, avg_f1_list = [], []
     for i in range(args.runs):
         model_v = copy.deepcopy(model).to(args.device)
@@ -581,5 +585,5 @@ if __name__ == '__main__':
         avg_f1_list.append(np.array(f1_list))
     avg_auc_list = list(np.stack(avg_auc_list).mean(axis=0))
     avg_f1_list = list(np.stack(avg_f1_list).mean(axis=0))
-    print("auc: {}".format(avg_auc_list))
-    print("f1: {}".format(avg_f1_list))
+    logger.info("auc: {}".format(avg_auc_list))
+    logger.info("f1: {}".format(avg_f1_list))
