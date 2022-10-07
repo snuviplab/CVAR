@@ -126,7 +126,7 @@ def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_p
             )
         auc, f1 = test(model, val_data_loader, device)
         logger.info("Epoch {}/{} loss: {:.4f} val_auc: {:.4f} val_F1: {:.4f}".format(
-            epoch_i, epoch, epoch_loss/total_iters, auc, f1), " " * 20)
+            epoch_i, epoch, epoch_loss/total_iters, auc, f1))
     logger.info("TRAINING MODEL (DROPOUTNET) DONE")
     return 
 
@@ -157,7 +157,7 @@ def train(model, data_loader, device, epoch, lr, weight_decay, save_path, log_in
             )
         auc, f1 = test(model, val_data_loader, device)
         logger.info("Epoch {}/{} loss: {:.4f} val_auc: {:.4f} val_F1: {:.4f}".format(
-            epoch_i, epoch, epoch_loss/total_iters, auc, f1), " " * 20)
+            epoch_i, epoch, epoch_loss/total_iters, auc, f1))
     logger.info("TRAINING MODEL DONE")
     return 
 
@@ -187,7 +187,7 @@ def pretrain(dataset_name,
     model.init()
     # pretrain
     if is_dropoutnet:
-        dropoutNet_train(model, dataloaders['warm_train'], device, epoch, lr, weight_decay, save_path, dropout_ratio, val_data_loader=dataloaders['warm_val'])
+        dropoutNet_train(model, dataloaders['warm_train'], device, epoch, lr, weight_decay, save_path, dropout_ratio, val_data_loader=dataloaders['cold_val'])
     else:
         train(model, dataloaders['warm_train'], device, epoch, lr, weight_decay, save_path, val_data_loader=dataloaders['warm_val'])
     logger.info("="*20 + 'pretrain {}'.format(model_name) + "="*20)
@@ -242,7 +242,7 @@ def base_test(model,
     auc, f1 = test(model, dataloaders["cold_val"], device)
     auc_list.append(auc.item())
     f1_list.append(f1.item())
-    logger.info("[base model] evaluate on [cold dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
+    logger.info("[base model] evaluate on [cold val dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
     logger.info("*"*20 + "base" + "*"*20)
     return auc_list, f1_list
 
@@ -497,6 +497,8 @@ def cvar_simple(model,
                                             lr=lr, weight_decay=weight_decay)
     batch_num = len(train_base)
     epochs = cvar_epochs if not only_init else 1
+    test_dataset_name = "cold_val"
+    test_loader = dataloaders[test_dataset_name]
     for e in range(epochs):
         for i, (features, label) in enumerate(train_base):
             a, b, c, d = 0.0, 0.0, 0.0, 0.0
@@ -512,26 +514,34 @@ def cvar_simple(model,
             if logger and (i + 1) % 10 == 0:
                 logger.info("    Iter {}/{}, loss: {:.4f}, main loss: {:.4f}, recon loss: {:.4f}, reg loss: {:.4f}" \
                         .format(i + 1, batch_num, a, b, c, d), end='\r')
+        auc, f1 = cvar_test(test_dataset_name, test_loader, model, warm_model, device)
+        logger.info("[Epoch {}] evaluate on [{} dataset] auc: {:.4f}, F1 score: {:.4f}".format(e + 1, test_dataset_name, auc, f1))
 
+    # TEST WITH COLD_TEST
+    test_dataset_name = "cold_test"
+    test_loader = dataloaders[test_dataset_name]
+    auc_list = []
+    f1_list = []
+    auc, f1 = cvar_test(test_dataset_name, test_loader, model, warm_model, device)
+    auc_list.append(auc.item())
+    f1_list.append(f1.item())
+    logger.info("[cvar] evaluate on [{} dataset] auc: {:.4f}, F1 score: {:.4f}".format(test_dataset_name, auc, f1))
+    return auc_list, f1_list
+
+def cvar_test(dataset_name, test_loader, model, warm_model, device):
+    model_v = copy.deepcopy(model).to(device)
+    logger.info(f"EVAL WITH {dataset_name}")
     # warm-up item id embedding (inference)
     logger.info("WARM-UP ITEM ID EMBEDDING")
-    test_loader = dataloaders["cold_val"]
     for (features, label) in test_loader:
-        origin_item_id_emb = warm_model.model.emb_layer[warm_model.item_id_name].weight.data
+        origin_item_id_emb = model_v.emb_layer[warm_model.item_id_name].weight.data
         warm_item_id_emb, _, _ = warm_model.warm_item_id(features)
         indexes = features[warm_model.item_id_name].squeeze()
         origin_item_id_emb[indexes, ] = warm_item_id_emb
     
-    # test
-    logger.info("TEST WITH WARMED-UP EMBEDDINGS")
-    auc_list = []
-    f1_list = []
-    auc, f1 = test(model, test_loader, device)
-    auc_list.append(auc.item())
-    f1_list.append(f1.item())
-    logger.info("[cvar] evaluate on [cold dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
-    logger.info("*"*20 + "cvar" + "*"*20)
-    return auc_list, f1_list
+    logger.info("VALID WITH WARMED-UP EMBEDDINGS")
+    auc, f1 = test(model_v, test_loader, device)
+    return auc, f1
 
 def run(model, dataloaders, args, model_name, warm):
     if warm == 'base':
