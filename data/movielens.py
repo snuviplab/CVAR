@@ -10,21 +10,20 @@ class Movielens1MbaseDataset(Dataset):
     """
     Load a base Movielens Dataset 
     """
-    def __init__(self, dataset_name, df, description, device):
+    def __init__(self, dataset_name, df, content, description, device):
         super(Movielens1MbaseDataset, self).__init__()
         self.dataset_name = dataset_name
         self.df = df
         self.length = len(df)
         self.name2array = {}
         for name in df.columns:
-            if name == "video" or name == "text":
-                self.name2array[name] = np.array(list(df[name]), dtype=np.float16)
-            else:
-                self.name2array[name] = torch.from_numpy(np.array(list(df[name])).reshape([self.length, -1])).to(device)
+            self.name2array[name] = torch.from_numpy(np.array(list(df[name])).reshape([self.length, -1])).to(device)
         self.format(description)
         self.features = [name for name in df.columns if name != 'rating']
+        self.features.extend(["video", "text"])
         self.label = 'rating'
         self.device = device
+        self.content = content
 
     def format(self, description):
         for name, size, type in description:
@@ -41,9 +40,14 @@ class Movielens1MbaseDataset(Dataset):
                 
     def __getitem__(self, index):
         x_dict = {}
+        item_id = self.name2array["item_id"][index].item()
+        video = self.content[item_id]["video"]
+        x_dict["video"] = torch.from_numpy(video).to(self.device).to(torch.float32)
+        text = self.content[item_id]["text"]
+        x_dict["text"] = torch.from_numpy(text).to(self.device).to(torch.float32)
         for name in self.features:
             if name == "video" or name == "text":
-                x_dict[name] = torch.from_numpy(self.name2array[name][index]).to(self.device).to(torch.float32)
+                continue
             else:
                 x_dict[name] = self.name2array[name][index]
         return x_dict, self.name2array[self.label][index].squeeze()
@@ -66,13 +70,12 @@ class MovieLens1MColdStartDataLoader(object):
         self.dataset_name = dataset_name
         self.dataloaders = {}
         self.description = data['description']
+        self.content = data["content_features"]
         for key, df in data.items():
-            if key == "warm_test":
-                continue
-            if key == 'description':
+            if key in ["warm_test", "description", "content_features"]:
                 continue
             if 'metaE' not in key:
-                self.dataloaders[key] = DataLoader(Movielens1MbaseDataset(dataset_name, df, self.description, device), batch_size=bsz, shuffle=shuffle)
+                self.dataloaders[key] = DataLoader(Movielens1MbaseDataset(dataset_name, df, self.content, self.description, device), batch_size=bsz, shuffle=shuffle)
             else:
                 self.dataloaders[key] = DataLoader(Movielens1MbaseDataset(dataset_name, df, self.description, device), batch_size=bsz, shuffle=False)
         self.keys = list(self.dataloaders.keys())
