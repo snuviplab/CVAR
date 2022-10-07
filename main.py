@@ -85,18 +85,21 @@ def test(model, data_loader, device):
     scores_arr = np.array(scores)
     return roc_auc_score(labels, scores), f1_score(labels, (scores_arr > np.mean(scores_arr)).astype(np.float32).tolist())
 
-def test_ranking(model, data_loader, topk=10):
-    topk = 10
+def test_ranking(model, data_loader, device, topk=10):
     length = len(data_loader)
     sum_num_hit, precision, recall, ndcg = 0, 0, 0, 0
-    for features, label in tqdm(data_loader):
+    tqdm_dataloader = tqdm(data_loader)
+    for features, label in tqdm(tqdm_dataloader):
         features = {k: v.squeeze(0) for k, v in features.items()}
+        features["count"] = torch.ones(len(features["count"]))
+        features["count"] = features["count"].to(device)
+        features["count"] = features["count"].unsqueeze(1)
         pos_items = torch.Tensor(label).cpu().numpy()
         num_pos = len(pos_items)
 
         score = model(features)
         item_indices = score.cpu().detach().numpy().argsort()[-topk:][::-1]
-        top_items = features["item_id"].squeeze().detach().numpy()[item_indices]
+        top_items = features["item_id"].squeeze().cpu().detach().numpy()[item_indices]
 
         num_hit = len(np.intersect1d(pos_items, top_items))
         sum_num_hit += num_hit
@@ -114,6 +117,7 @@ def test_ranking(model, data_loader, topk=10):
                 ndcg_score += 1 / np.log2(i+2)
         ndcg += ndcg_score / max_ndcg_score
     precision, recall, ndcg_score = precision / length, recall / length, ndcg / length
+    return (precision, recall, ndcg_score)
 
 
 def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_path, dropout_ratio, log_interval=10, val_data_loader=None):
@@ -155,10 +159,12 @@ def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_p
                     epoch_i, loss.item()
                 )
             )
-        precision, recall, ndcg_score = test_ranking(model, val_data_loader)
-        val_result = "prec@{}: {:.4f} rec@{}: {:4f} ndcg@{}: {:4f}".format(
-            topk, precision, topk, recall, topk, ndcg_score
+        topk = 10
+        precision, recall, ndcg_score = test_ranking(model, val_data_loader, device, topk)
+        val_result = "Epoch {} prec@{}: {:.4f} rec@{}: {:4f} ndcg@{}: {:4f}".format(
+            epoch_i, topk, precision, topk, recall, topk, ndcg_score
         )
+        logger.info(val_result)
     logger.info("TRAINING MODEL (DROPOUTNET) DONE")
     return 
 
@@ -269,14 +275,12 @@ def base_test(model,
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     # data set list
-    auc_list = []
-    f1_list = []
-    auc, f1 = test(model, dataloaders["cold_val"], device)
-    auc_list.append(auc.item())
-    f1_list.append(f1.item())
-    logger.info("[base model] evaluate on [cold val dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
-    logger.info("*"*20 + "base" + "*"*20)
-    return auc_list, f1_list
+    precision, recall, ndcg_score = test_ranking(model, dataloaders["cold_test"], device)
+    val_result = "[base model] evaluate on [cold test dataset] prec@k: {:.4f} rec@k: {:4f} ndcg@k: {:4f}".format(
+        precision, recall, ndcg_score
+    )
+    logger.info(val_result)
+    return (precision, recall, ndcg_score)
 
 def metaE(model,
           dataloaders,
@@ -581,18 +585,18 @@ def cvar_test(dataset_name, test_loader, model, warm_model, device):
 def run(model, dataloaders, args, model_name, warm):
     if warm == 'base':
         # auc_list, f1_list = base(model, dataloaders, model_name, args.epoch, args.lr, args.weight_decay, args.device, args.save_dir)
-        auc_list, f1_list = base_test(model, dataloaders, model_name, args.epoch, args.lr, args.weight_decay, args.device, args.save_dir)
+        result = base_test(model, dataloaders, model_name, args.epoch, args.lr, args.weight_decay, args.device, args.save_dir)
     elif warm == 'mwuf':
         auc_list, f1_list = mwuf(model, dataloaders, model_name, args.epoch, args.lr, args.weight_decay, args.device, args.save_dir)
     elif warm == 'metaE': 
         auc_list, f1_list = metaE(model, dataloaders, model_name, args.epoch, args.lr, args.weight_decay, args.device, args.save_dir)
     elif warm == 'cvar': 
         # auc_list, f1_list = cvar(model, dataloaders, model_name, args.epoch, args.cvar_epochs, args.cvar_iters, args.lr, args.weight_decay, args.device, args.save_dir)
-        auc_list, f1_list = cvar_simple(model, dataloaders, model_name, args.epoch, args.cvar_epochs, args.cvar_iters, args.lr, args.weight_decay, args.device, args.save_dir)
+        result = cvar_simple(model, dataloaders, model_name, args.epoch, args.cvar_epochs, args.cvar_iters, args.lr, args.weight_decay, args.device, args.save_dir)
     elif warm == 'cvar_init': 
         # auc_list, f1_list = cvar(model, dataloaders, model_name, args.epoch, args.cvar_epochs, args.cvar_iters, args.lr, args.weight_decay, args.device, args.save_dir, only_init=True)
-        auc_list, f1_list = cvar_simple(model, dataloaders, model_name, args.epoch, args.cvar_epochs, args.cvar_iters, args.lr, args.weight_decay, args.device, args.save_dir, only_init=True)
-    return auc_list, f1_list
+        result = cvar_simple(model, dataloaders, model_name, args.epoch, args.cvar_epochs, args.cvar_iters, args.lr, args.weight_decay, args.device, args.save_dir, only_init=True)
+    return result
 
 if __name__ == '__main__':
     args = get_args()
@@ -622,13 +626,18 @@ if __name__ == '__main__':
             
     # warmup train and test
     logger.info("WARMUP TRAIN STARTS")
-    avg_auc_list, avg_f1_list = [], []
-    for i in range(args.runs):
-        model_v = copy.deepcopy(model).to(args.device)
-        auc_list, f1_list = run(model_v, dataloaders, args, args.model_name, args.warmup_model)
-        avg_auc_list.append(np.array(auc_list))
-        avg_f1_list.append(np.array(f1_list))
-    avg_auc_list = list(np.stack(avg_auc_list).mean(axis=0))
-    avg_f1_list = list(np.stack(avg_f1_list).mean(axis=0))
-    logger.info("auc: {}".format(avg_auc_list))
-    logger.info("f1: {}".format(avg_f1_list))
+    # avg_auc_list, avg_f1_list = [], []
+    # for i in range(args.runs):
+    #     model_v = copy.deepcopy(model).to(args.device)
+    #     auc_list, f1_list = run(model_v, dataloaders, args, args.model_name, args.warmup_model)
+    #     avg_auc_list.append(np.array(auc_list))
+    #     avg_f1_list.append(np.array(f1_list))
+    # avg_auc_list = list(np.stack(avg_auc_list).mean(axis=0))
+    # avg_f1_list = list(np.stack(avg_f1_list).mean(axis=0))
+    # logger.info("auc: {}".format(avg_auc_list))
+    # logger.info("f1: {}".format(avg_f1_list))
+    
+    model_v = copy.deepcopy(model).to(args.device)
+    precision, recall, ndcg = run(model_v, dataloaders, args, args.model_name, args.warmup_model)
+    logger.info("P@K {:4f} R@K {:4f} NDCG@K {:4f}".format(precision, recall, ndcg))
+
