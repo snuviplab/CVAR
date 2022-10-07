@@ -34,7 +34,7 @@ def get_args():
     parser.add_argument('--cvar_iters', type=int, default=10)
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--weight_decay', type=float, default=1e-6)
-    parser.add_argument('--device', default='cuda:0' if torch.cuda.is_availabe() else 'cpu')
+    parser.add_argument('--device', default='cuda:0' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--save_dir', default='chkpt')
     parser.add_argument('--runs', type=int, default=3, help = 'number of executions to compute the average metrics')
     parser.add_argument('--seed', type=int, default=1234)
@@ -182,7 +182,7 @@ def pretrain(dataset_name,
     logger.info("GET DATALOADER DONE")
     model = get_model(model_name, dataloaders).to(device)
     save_path = os.path.join(save_dir, 'model.pth')
-    logger.info("="*20, 'pretrain {}'.format(model_name), "="*20)
+    logger.info("="*20 + 'pretrain {}'.format(model_name) + "="*20)
     # init parameters
     model.init()
     # pretrain
@@ -190,7 +190,7 @@ def pretrain(dataset_name,
         dropoutNet_train(model, dataloaders['warm_train'], device, epoch, lr, weight_decay, save_path, dropout_ratio, val_data_loader=dataloaders['warm_val'])
     else:
         train(model, dataloaders['warm_train'], device, epoch, lr, weight_decay, save_path, val_data_loader=dataloaders['warm_val'])
-    logger.info("="*20, 'pretrain {}'.format(model_name), "="*20)
+    logger.info("="*20 + 'pretrain {}'.format(model_name) + "="*20)
     return model, dataloaders
 
 def base(model,
@@ -201,7 +201,7 @@ def base(model,
          weight_decay,
          device,
          save_dir):
-    logger.info("*"*20, "base", "*"*20)
+    logger.info("*"*20 + "base" + "*"*20)
     device = torch.device(device)
     save_dir = os.path.join(save_dir, model_name)
     save_path = os.path.join(save_dir, 'model.pth')
@@ -219,7 +219,7 @@ def base(model,
         if i < 3:
             model.only_optimize_itemid()
             train(model, dataloaders[train_s], device, epoch, lr, weight_decay, save_path)
-    logger.info("*"*20, "base", "*"*20)
+    logger.info("*"*20 + "base" + "*"*20)
     return auc_list, f1_list
 
 def base_test(model,
@@ -230,7 +230,7 @@ def base_test(model,
         weight_decay,
         device,
         save_dir):
-    logger.info("*"*20, "base", "*"*20)
+    logger.info("*"*20 + "base" + "*"*20)
     device = torch.device(device)
     save_dir = os.path.join(save_dir, model_name)
     save_path = os.path.join(save_dir, 'model.pth')
@@ -243,7 +243,7 @@ def base_test(model,
     auc_list.append(auc.item())
     f1_list.append(f1.item())
     logger.info("[base model] evaluate on [cold dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
-    logger.info("*"*20, "base", "*"*20)
+    logger.info("*"*20 + "base" + "*"*20)
     return auc_list, f1_list
 
 def metaE(model,
@@ -254,7 +254,7 @@ def metaE(model,
           weight_decay,
           device,
           save_dir):
-    logger.info("*"*20, "metaE", "*"*20)
+    logger.info("*"*20 + "metaE" + "*"*20)
     device = torch.device(device)
     save_dir = os.path.join(save_dir, model_name)
     if not os.path.exists(save_dir):
@@ -309,7 +309,7 @@ def metaE(model,
         if i < len(dataset_list) - 1:
             metaE_model.model.only_optimize_itemid()
             train(metaE_model.model, dataloaders[train_s], device, epoch, lr, weight_decay, save_path)
-    logger.info("*"*20, "metaE", "*"*20)
+    logger.info("*"*20 + "metaE" + "*"*20)
     return auc_list, f1_list
 
 def mwuf(model,
@@ -320,7 +320,7 @@ def mwuf(model,
          weight_decay,
          device,
          save_dir):
-    logger.info("*"*20, "mwuf", "*"*20)
+    logger.info("*"*20 + "mwuf" + "*"*20)
     device = torch.device(device)
     save_dir = os.path.join(save_dir, model_name)
     if not os.path.exists(save_dir):
@@ -387,7 +387,7 @@ def mwuf(model,
         if i < len(dataset_list) - 1:
             mwuf_model.model.only_optimize_itemid()
             train(mwuf_model.model, dataloaders[train_s], device, epoch, lr, weight_decay, save_path)
-    logger.info("*"*20, "mwuf", "*"*20)
+    logger.info("*"*20 + "mwuf" + "*"*20)
     return auc_list, f1_list
 
 def cvar(model,
@@ -401,7 +401,7 @@ def cvar(model,
        device,
        save_dir,
        only_init=False):
-    logger.info("*"*20, "cvar", "*"*20)
+    logger.info("*"*20 + "cvar" + "*"*20)
     device = torch.device(device)
     save_dir = os.path.join(save_dir, model_name)
     if not os.path.exists(save_dir):
@@ -460,7 +460,7 @@ def cvar(model,
             train(warm_model.model, dataloaders[train_s], device, epoch, lr, weight_decay, save_path)
             if not only_init:
                 warm_up(dataloaders[train_s], epochs=cvar_epochs, iters=cvar_iters, logger=False)
-    logger.info("*"*20, "cvar", "*"*20)
+    logger.info("*"*20 + "cvar" + "*"*20)
     return auc_list, f1_list
 
 def cvar_simple(model,
@@ -475,7 +475,7 @@ def cvar_simple(model,
         save_dir,
         only_init=False,
         logger=False):
-    logger.info("*"*20, "cvar", "*"*20)
+    logger.info("*"*20 + "cvar" + "*"*20)
     device = torch.device(device)
     save_dir = os.path.join(save_dir, model_name)
     if not os.path.exists(save_dir):
@@ -530,7 +530,7 @@ def cvar_simple(model,
     auc_list.append(auc.item())
     f1_list.append(f1.item())
     logger.info("[cvar] evaluate on [cold dataset] auc: {:.4f}, F1 score: {:.4f}".format(auc, f1))
-    logger.info("*"*20, "base", "*"*20)
+    logger.info("*"*20 + "cvar" + "*"*20)
     return auc_list, f1_list
 
 def run(model, dataloaders, args, model_name, warm):
@@ -556,7 +556,7 @@ if __name__ == '__main__':
         torch.manual_seed(args.seed)
         torch.cuda.manual_seed(args.seed)
     res = {}
-    logger.info("*"*20, "ENVIRONMENT", "*"*20)
+    logger.info("*"*20 + "ENVIRONMENT" + "*"*20)
     for arg, value in args._get_kwargs():
         logger.info(f"{arg}: {value}")
     logger.info("*"*50)    
