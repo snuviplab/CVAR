@@ -8,13 +8,14 @@ from tqdm import tqdm
 from sklearn.metrics import roc_auc_score, f1_score
 import argparse
 from logger import Logger
+from datetime import datetime
 from data import MovieLens1MColdStartDataLoader, TaobaoADColdStartDataLoader
 from model import FactorizationMachineModel, WideAndDeep, DeepFactorizationMachineModel, AdaptiveFactorizationNetwork, ProductNeuralNetworkModel
 from model import AttentionalFactorizationMachineModel, DeepCrossNetworkModel, MWUF, MetaE, CVAR
 from model.wd import WideAndDeep
 
-Logger.initialize()
-logger = Logger.get_logger()
+BASE_DIR = os.path.dirname(os.path.realpath(__file__))
+logger = None
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -605,6 +606,13 @@ if __name__ == '__main__':
         torch.manual_seed(args.seed)
         torch.cuda.manual_seed(args.seed)
     res = {}
+    start_time = datetime.now().strftime("%Y%m%d_%H%M")
+    log_dir = os.path.join(BASE_DIR, "log")
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    log_file = os.path.join(log_dir, f"{args.model_name}_{args.warmup_model}_{start_time}.log")
+    Logger.initialize(log_file)
+    logger = Logger.get_logger()
     logger.info("*"*20 + "ENVIRONMENT" + "*"*20)
     for arg, value in args._get_kwargs():
         logger.info(f"{arg}: {value}")

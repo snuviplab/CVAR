@@ -8,7 +8,7 @@ LOG_FILE = os.path.join(LOG_DIR, "baseline.log")
 
 class Logger:
     @classmethod
-    def initialize(cls):
+    def initialize(cls, log_file=LOG_FILE):
         if not os.path.exists(LOG_DIR):
             os.makedirs(LOG_DIR)
         cls.logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ class Logger:
             "%(asctime)s [%(levelname)s] %(filename)s:: %(message)s"
         )
         stream_handler = logging.StreamHandler()
-        file_handler = logging.FileHandler(os.path.join(LOG_FILE))
+        file_handler = logging.FileHandler(os.path.join(log_file))
         stream_handler.setFormatter(formatter)
         file_handler.setFormatter(formatter)
         cls.logger.addHandler(stream_handler)
