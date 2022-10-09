@@ -555,6 +555,7 @@ def cvar_simple(model,
                 )
             )
         precision, recall, ndcg = cvar_test(test_dataset_name, test_loader, model, warm_model, device)
+        logger.info("[Epoch {}] loss: {:.4f}, main loss: {:.4f}, recon loss: {:.4f}, reg loss: {:.4f}".format(e + 1, a, b, c, d))
         logger.info("[Epoch {}] evaluate on [{} dataset] p: {:.4f}, r: {:.4f} n: {:.4f}".format(e + 1, test_dataset_name, precision, recall, ndcg))
 
     # TEST WITH COLD_TEST
@@ -572,6 +573,10 @@ def cvar_test(dataset_name, test_loader, model, warm_model, device):
     # warm-up item id embedding (inference)
     logger.info("WARM-UP ITEM ID EMBEDDING")
     for (features, label) in test_loader:
+        features = {k: v.squeeze(0) for k, v in features.items()}
+        features["count"] = torch.ones(len(features["count"]))
+        features["count"] = features["count"].to(device)
+        features["count"] = features["count"].unsqueeze(1)
         origin_item_id_emb = model_v.emb_layer[warm_model.item_id_name].weight.data
         warm_item_id_emb, _, _ = warm_model.warm_item_id(features)
         indexes = features[warm_model.item_id_name].squeeze()
