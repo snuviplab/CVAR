@@ -554,19 +554,17 @@ def cvar_simple(model,
                     e + 1, a, b, c, d
                 )
             )
-        auc, f1 = cvar_test(test_dataset_name, test_loader, model, warm_model, device)
-        logger.info("[Epoch {}] evaluate on [{} dataset] auc: {:.4f}, F1 score: {:.4f}".format(e + 1, test_dataset_name, auc, f1))
+        precision, recall, ndcg = cvar_test(test_dataset_name, test_loader, model, warm_model, device)
+        logger.info("[Epoch {}] evaluate on [{} dataset] p: {:.4f}, r: {:.4f} n: {:.4f}".format(e + 1, test_dataset_name, precision, recall, ndcg))
 
     # TEST WITH COLD_TEST
     test_dataset_name = "cold_test"
-    test_loader = dataloaders[test_dataset_name]
-    auc_list = []
-    f1_list = []
-    auc, f1 = cvar_test(test_dataset_name, test_loader, model, warm_model, device)
-    auc_list.append(auc.item())
-    f1_list.append(f1.item())
-    logger.info("[cvar] evaluate on [{} dataset] auc: {:.4f}, F1 score: {:.4f}".format(test_dataset_name, auc, f1))
-    return auc_list, f1_list
+    precision, recall, ndcg = cvar_test(test_dataset_name, test_loader, model, warm_model, device)
+    val_result = "[base model] evaluate on [cold test dataset] prec@k: {:.4f} rec@k: {:4f} ndcg@k: {:4f}".format(
+        precision, recall, ndcg
+    )
+    logger.info(val_result)
+    return (precision, recall, ndcg)
 
 def cvar_test(dataset_name, test_loader, model, warm_model, device):
     model_v = copy.deepcopy(model).to(device)
@@ -580,8 +578,7 @@ def cvar_test(dataset_name, test_loader, model, warm_model, device):
         origin_item_id_emb[indexes, ] = warm_item_id_emb
     
     logger.info("VALID WITH WARMED-UP EMBEDDINGS")
-    auc, f1 = test(model_v, test_loader, device)
-    return auc, f1
+    return test_ranking(model_v, test_loader, device)
 
 def run(model, dataloaders, args, model_name, warm):
     if warm == 'base':
