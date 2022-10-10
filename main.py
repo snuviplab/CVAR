@@ -517,7 +517,6 @@ def cvar_simple(model,
     save_dir = os.path.join(save_dir, model_name)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
-    save_path = os.path.join(save_dir, 'model.pth')
 
     # train cvar
     logger.info("TRAINING CVAR")
@@ -536,6 +535,10 @@ def cvar_simple(model,
     epochs = cvar_epochs if not only_init else 1
     test_dataset_name = "cold_val"
     test_loader = dataloaders[test_dataset_name]
+    save_best_prec = os.path.join(save_dir, "best_prec_cvar.pth")
+    save_best_recall = os.path.join(save_dir, "best_recall_cvar.pth")
+    save_best_ndcg = os.path.join(save_dir, "best_ndcg_cvar.pth")
+    best_prec, best_recall, best_ndcg = 0.0, 0.0, 0.0
     for e in range(epochs):
         tqdm_dataloader = tqdm(train_base)
         for i, (features, label) in enumerate(tqdm_dataloader):
@@ -555,10 +558,21 @@ def cvar_simple(model,
                 )
             )
         precision, recall, ndcg = cvar_test(test_dataset_name, test_loader, model, warm_model, device)
+        if precision > best_prec:
+            logger.info("Save best precision model")
+            torch.save(warm_model, save_best_prec)
+        if recall > best_recall:
+            logger.info("Save best recall model")
+            torch.save(warm_model, save_best_recall)
+        if ndcg > best_ndcg:
+            logger.info("Save best ndcg model")
+            torch.save(warm_model, save_best_ndcg)
         logger.info("[Epoch {}] loss: {:.4f}, main loss: {:.4f}, recon loss: {:.4f}, reg loss: {:.4f}".format(e + 1, a, b, c, d))
         logger.info("[Epoch {}] evaluate on [{} dataset] p: {:.4f}, r: {:.4f} n: {:.4f}".format(e + 1, test_dataset_name, precision, recall, ndcg))
 
     # TEST WITH COLD_TEST
+    save_latest = os.path.join(save_dir, 'latest_cvar.pth')
+    torch.save(warm_model, save_latest)
     test_dataset_name = "cold_test"
     precision, recall, ndcg = cvar_test(test_dataset_name, test_loader, model, warm_model, device)
     val_result = "[base model] evaluate on [cold test dataset] prec@k: {:.4f} rec@k: {:4f} ndcg@k: {:4f}".format(
