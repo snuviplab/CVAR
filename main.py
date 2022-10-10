@@ -39,14 +39,14 @@ def get_args():
     parser.add_argument('--save_dir', default='chkpt')
     parser.add_argument('--runs', type=int, default=3, help = 'number of executions to compute the average metrics')
     parser.add_argument('--seed', type=int, default=1234)
-
+    parser.add_argument('--content', default="all", help="required to be one of [all, video_only, text_only]")
     args = parser.parse_args()
     return args
 
-def get_loaders(name, datahub_path, device, bsz, shuffle):
+def get_loaders(name, datahub_path, device, bsz, content, shuffle):
     path = os.path.join(datahub_path, name, "{}_data.pkl".format(name))
     if name == 'movielens1M' or name == "movielens":
-        dataloaders = MovieLens1MColdStartDataLoader(name, path, device, bsz=bsz, shuffle=shuffle)
+        dataloaders = MovieLens1MColdStartDataLoader(name, path, device, bsz=bsz, content=content, shuffle=shuffle)
     elif name == 'taobaoAD':
         dataloaders = TaobaoADColdStartDataLoader(name, path, device, bsz=bsz, shuffle=shuffle)
     else:
@@ -640,7 +640,7 @@ if __name__ == '__main__':
     if os.path.exists(model_path):
         logger.info(f"LOAD PRETRAINED BACKBONE MODEL: {args.model_name}")
         model = torch.load(model_path).to(args.device)
-        dataloaders = get_loaders(args.dataset_name, args.datahub_path, args.device, args.bsz, args.shuffle==1)
+        dataloaders = get_loaders(args.dataset_name, args.datahub_path, args.device, args.bsz, args.content, args.shuffle==1)
     else:
         logger.info(f"TRAIN BACKBONE MODEL: {args.model_name}")
         model, dataloaders = pretrain(args.dataset_name, args.datahub_path, args.bsz, args.shuffle, args.model_name, \
