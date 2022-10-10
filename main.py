@@ -43,10 +43,10 @@ def get_args():
     args = parser.parse_args()
     return args
 
-def get_loaders(name, datahub_path, device, bsz, content, shuffle):
+def get_loaders(name, datahub_path, device, bsz, content_mode, shuffle):
     path = os.path.join(datahub_path, name, "{}_data.pkl".format(name))
     if name == 'movielens1M' or name == "movielens":
-        dataloaders = MovieLens1MColdStartDataLoader(name, path, device, bsz=bsz, content=content, shuffle=shuffle)
+        dataloaders = MovieLens1MColdStartDataLoader(name, path, device, bsz=bsz, content_mode=content_mode, shuffle=shuffle)
     elif name == 'taobaoAD':
         dataloaders = TaobaoADColdStartDataLoader(name, path, device, bsz=bsz, shuffle=shuffle)
     else:
@@ -105,7 +105,7 @@ def test_ranking(model, data_loader, device, topk=10):
         num_hit = len(np.intersect1d(pos_items, top_items))
         sum_num_hit += num_hit
         precision += float(num_hit / topk)
-        recall += float(num_hit / num_pos)
+        recall += float(num_hit / min(num_pos, topk))
 
         ndcg_score = 0.0
         max_ndcg_score = 0.0
@@ -115,19 +115,24 @@ def test_ranking(model, data_loader, device, topk=10):
             continue
         for i, temp_item in enumerate(top_items):
             if temp_item in pos_items:
-                ndcg_score += 1 / np.log2(i+2)
+                ndcg_score += 1 / np.log2(i + 2)
         ndcg += ndcg_score / max_ndcg_score
     precision, recall, ndcg_score = precision / length, recall / length, ndcg / length
     return (precision, recall, ndcg_score)
 
 
-def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_path, dropout_ratio, log_interval=10, val_data_loader=None):
+def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_dir, dropout_ratio, log_interval=10, val_data_loader=None):
     # train
     logger.info("TRAINING MODEL (DROPOUTNET) STARTS")
     model.train()
     criterion = torch.nn.BCELoss()
     optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), \
                                             lr=lr, weight_decay=weight_decay)
+
+    save_best_prec = os.path.join(save_dir, "best_prec_cvar.pth")
+    save_best_recall = os.path.join(save_dir, "best_recall_cvar.pth")
+    save_best_ndcg = os.path.join(save_dir, "best_ndcg_cvar.pth")
+    best_prec, best_recall, best_ndcg = 0.0, 0.0, 0.0
     for epoch_i in range(1, epoch + 1):
         epoch_loss = 0.0
         total_loss = 0
@@ -161,10 +166,19 @@ def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_p
                 )
             )
         topk = 10
-        precision, recall, ndcg_score = test_ranking(model, val_data_loader, device, topk)
+        precision, recall, ndcg = test_ranking(model, val_data_loader, device, topk)
         val_result = "Epoch {} prec@{}: {:.4f} rec@{}: {:4f} ndcg@{}: {:4f}".format(
-            epoch_i, topk, precision, topk, recall, topk, ndcg_score
+            epoch_i, topk, precision, topk, recall, topk, ndcg
         )
+        if precision > best_prec:
+            logger.info("Save best precision model")
+            torch.save(model, save_best_prec)
+        if recall > best_recall:
+            logger.info("Save best recall model")
+            torch.save(model, save_best_recall)
+        if ndcg > best_ndcg:
+            logger.info("Save best ndcg model")
+            torch.save(model, save_best_ndcg)
         logger.info(val_result)
     logger.info("TRAINING MODEL (DROPOUTNET) DONE")
     return 
@@ -211,13 +225,14 @@ def pretrain(dataset_name,
          device,
          save_dir,
          dropout_ratio,
-         is_dropoutnet=False):
+         is_dropoutnet=False,
+         content_mode="all"):
     device = torch.device(device)
     save_dir = os.path.join(save_dir, model_name)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     logger.info("GET DATALOADER")
-    dataloaders = get_loaders(dataset_name, datahub_name, device, bsz, shuffle==1)
+    dataloaders = get_loaders(dataset_name, datahub_name, device, bsz, content_mode, shuffle==1)
     logger.info("GET DATALOADER DONE")
     model = get_model(model_name, dataloaders).to(device)
     save_path = os.path.join(save_dir, 'model.pth')
@@ -226,7 +241,7 @@ def pretrain(dataset_name,
     model.init()
     # pretrain
     if is_dropoutnet:
-        dropoutNet_train(model, dataloaders['warm_train'], device, epoch, lr, weight_decay, save_path, dropout_ratio, val_data_loader=dataloaders['cold_val'])
+        dropoutNet_train(model, dataloaders['warm_train'], device, epoch, lr, weight_decay, save_dir, dropout_ratio, val_data_loader=dataloaders['cold_val'])
     else:
         train(model, dataloaders['warm_train'], device, epoch, lr, weight_decay, save_path, val_data_loader=dataloaders['warm_val'])
     logger.info("="*20 + 'pretrain {}'.format(model_name) + "="*20)
@@ -644,7 +659,7 @@ if __name__ == '__main__':
     else:
         logger.info(f"TRAIN BACKBONE MODEL: {args.model_name}")
         model, dataloaders = pretrain(args.dataset_name, args.datahub_path, args.bsz, args.shuffle, args.model_name, \
-            args.epoch, args.lr, args.weight_decay, args.device, args.save_dir, args.dropout_ratio, args.is_dropoutnet)
+            args.epoch, args.lr, args.weight_decay, args.device, args.save_dir, args.dropout_ratio, args.is_dropoutnet, args.content)
         if len(args.pretrain_model_path) > 0:
             torch.save(model, model_path)
             

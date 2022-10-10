@@ -137,7 +137,12 @@ class MovieLens1MColdStartDataLoader(object):
             data = pickle.load(f)
         self.dataset_name = dataset_name
         self.dataloaders = {}
-        self.description = data['description']
+        exclude_col = []
+        if content_mode == "video_only":
+            exclude_col.append("text")
+        elif content_mode == "text_only":
+            exclude_col.append("video")
+        self.description = [desc for desc in data["description"] if desc[0] not in exclude_col]
         self.content = data["content_features"]
         for key, df in data.items():
             if key.startswith("cold"):
