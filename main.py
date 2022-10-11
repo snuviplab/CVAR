@@ -40,6 +40,7 @@ def get_args():
     parser.add_argument('--runs', type=int, default=3, help = 'number of executions to compute the average metrics')
     parser.add_argument('--seed', type=int, default=1234)
     parser.add_argument('--content', default="all", help="required to be one of [all, video_only, text_only]")
+    parser.add_argument('--log_file', default="")
     args = parser.parse_args()
     return args
 
@@ -647,7 +648,8 @@ if __name__ == '__main__':
     log_dir = os.path.join(BASE_DIR, "log")
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
-    log_file = os.path.join(log_dir, f"{args.model_name}_{args.warmup_model}_{start_time}.log")
+    logfile_name = args.log_file if args.log_file else f"{args.model_name}_{args.warmup_model}_{start_time}.log"
+    log_file = os.path.join(log_dir, logfile_name)
     Logger.initialize(log_file)
     logger = Logger.get_logger()
     logger.info("*"*20 + "ENVIRONMENT" + "*"*20)
