@@ -129,9 +129,9 @@ def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_d
     optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), \
                                             lr=lr, weight_decay=weight_decay)
 
-    save_best_prec = os.path.join(save_dir, "best_prec_cvar.pth")
-    save_best_recall = os.path.join(save_dir, "best_recall_cvar.pth")
-    save_best_ndcg = os.path.join(save_dir, "best_ndcg_cvar.pth")
+    save_best_prec = os.path.join(save_dir, "best_prec_dropout.pth")
+    save_best_recall = os.path.join(save_dir, "best_recall_dropout.pth")
+    save_best_ndcg = os.path.join(save_dir, "best_ndcg_dropout.pth")
     best_prec, best_recall, best_ndcg = 0.0, 0.0, 0.0
     for epoch_i in range(1, epoch + 1):
         epoch_loss = 0.0
@@ -180,16 +180,19 @@ def dropoutNet_train(model, data_loader, device, epoch, lr, weight_decay, save_d
             logger.info("Save best ndcg model")
             torch.save(model, save_best_ndcg)
         logger.info(val_result)
+    torch.save(model, os.path.join(save_dir, "latest_dropout.pth"))
     logger.info("TRAINING MODEL (DROPOUTNET) DONE")
     return 
 
-def train(model, data_loader, device, epoch, lr, weight_decay, save_path, log_interval=10, val_data_loader=None):
+def train(model, data_loader, device, epoch, lr, weight_decay, save_dir, log_interval=10, val_data_loader=None):
     # train
     logger.info("TRAINING MODEL STARTS")
     model.train()
     criterion = torch.nn.BCELoss()
     optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, model.parameters()), \
                                             lr=lr, weight_decay=weight_decay)
+    save_best_auc = os.path.join(save_dir, "best_auc.pth")
+    best_auc = 0.0
     for epoch_i in range(1, epoch + 1):
         epoch_loss = 0.0
         total_loss = 0
@@ -209,8 +212,11 @@ def train(model, data_loader, device, epoch, lr, weight_decay, save_path, log_in
                 )
             )
         auc, f1 = test(model, val_data_loader, device)
+        if auc > best_auc:
+            torch.save(model, save_best_auc)
         logger.info("Epoch {}/{} loss: {:.4f} val_auc: {:.4f} val_F1: {:.4f}".format(
             epoch_i, epoch, epoch_loss/total_iters, auc, f1))
+    torch.save(model, os.path.join(save_dir, "latest_backbone.pth"))
     logger.info("TRAINING MODEL DONE")
     return 
 
@@ -243,7 +249,7 @@ def pretrain(dataset_name,
     if is_dropoutnet:
         dropoutNet_train(model, dataloaders['warm_train'], device, epoch, lr, weight_decay, save_dir, dropout_ratio, val_data_loader=dataloaders['cold_val'])
     else:
-        train(model, dataloaders['warm_train'], device, epoch, lr, weight_decay, save_path, val_data_loader=dataloaders['warm_val'])
+        train(model, dataloaders['warm_train'], device, epoch, lr, weight_decay, save_dir, val_data_loader=dataloaders['warm_val'])
     logger.info("="*20 + 'pretrain {}'.format(model_name) + "="*20)
     return model, dataloaders
 
@@ -637,7 +643,7 @@ if __name__ == '__main__':
         torch.manual_seed(args.seed)
         torch.cuda.manual_seed(args.seed)
     res = {}
-    start_time = datetime.now().strftime("%Y%m%d_%H%M")
+    start_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = os.path.join(BASE_DIR, "log")
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
@@ -651,7 +657,9 @@ if __name__ == '__main__':
     torch.cuda.empty_cache()
     # load or train pretrain models
     drop_suffix = '-dropoutnet' if args.is_dropoutnet else ''
-    model_path = os.path.join(args.pretrain_model_path, args.model_name + drop_suffix + '-{}-{}'.format(args.dataset_name, args.seed))
+    # model_path = os.path.join(args.pretrain_model_path, args.model_name + drop_suffix + '-{}-{}'.format(args.dataset_name, args.seed))
+    model_path = args.pretrain_model_path
+    print(model_path)
     if os.path.exists(model_path):
         logger.info(f"LOAD PRETRAINED BACKBONE MODEL: {args.model_name}")
         model = torch.load(model_path).to(args.device)
