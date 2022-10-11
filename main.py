@@ -19,6 +19,7 @@ logger = None
 
 def get_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--mode', default='train')
     parser.add_argument('--pretrain_model_path', default='')
     # parser.add_argument('--dataset_name', default='taobaoAD', help='required to be one of [movielens1M, taobaoAD]')
     parser.add_argument('--dataset_name', default='movielens', help='required to be one of [movielens, yahoo]')
@@ -235,14 +236,12 @@ def pretrain(dataset_name,
          is_dropoutnet=False,
          content_mode="all"):
     device = torch.device(device)
-    save_dir = os.path.join(save_dir, model_name)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     logger.info("GET DATALOADER")
     dataloaders = get_loaders(dataset_name, datahub_name, device, bsz, content_mode, shuffle==1)
     logger.info("GET DATALOADER DONE")
     model = get_model(model_name, dataloaders).to(device)
-    save_path = os.path.join(save_dir, 'model.pth')
     logger.info("="*20 + 'pretrain {}'.format(model_name) + "="*20)
     # init parameters
     model.init()
@@ -264,7 +263,7 @@ def base(model,
          save_dir):
     logger.info("*"*20 + "base" + "*"*20)
     device = torch.device(device)
-    save_dir = os.path.join(save_dir, model_name)
+    
     save_path = os.path.join(save_dir, 'model.pth')
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
@@ -293,7 +292,7 @@ def base_test(model,
         save_dir):
     logger.info("*"*20 + "base" + "*"*20)
     device = torch.device(device)
-    save_dir = os.path.join(save_dir, model_name)
+    
     save_path = os.path.join(save_dir, 'model.pth')
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
@@ -315,7 +314,7 @@ def metaE(model,
           save_dir):
     logger.info("*"*20 + "metaE" + "*"*20)
     device = torch.device(device)
-    save_dir = os.path.join(save_dir, model_name)
+    
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     save_path = os.path.join(save_dir, 'model.pth')
@@ -381,7 +380,7 @@ def mwuf(model,
          save_dir):
     logger.info("*"*20 + "mwuf" + "*"*20)
     device = torch.device(device)
-    save_dir = os.path.join(save_dir, model_name)
+    
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     save_path = os.path.join(save_dir, 'model.pth')
@@ -462,7 +461,7 @@ def cvar(model,
        only_init=False):
     logger.info("*"*20 + "cvar" + "*"*20)
     device = torch.device(device)
-    save_dir = os.path.join(save_dir, model_name)
+    
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     save_path = os.path.join(save_dir, 'model.pth')
@@ -536,7 +535,7 @@ def cvar_simple(model,
         logging=False):
     logger.info("*"*20 + "cvar" + "*"*20)
     device = torch.device(device)
-    save_dir = os.path.join(save_dir, model_name)
+    
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
@@ -644,6 +643,7 @@ if __name__ == '__main__':
         torch.manual_seed(args.seed)
         torch.cuda.manual_seed(args.seed)
     res = {}
+
     start_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = os.path.join(BASE_DIR, "log")
     if not os.path.exists(log_dir):
@@ -656,37 +656,35 @@ if __name__ == '__main__':
     for arg, value in args._get_kwargs():
         logger.info(f"{arg}: {value}")
     logger.info("*"*50)    
-    torch.cuda.empty_cache()
-    # load or train pretrain models
-    drop_suffix = '-dropoutnet' if args.is_dropoutnet else ''
-    # model_path = os.path.join(args.pretrain_model_path, args.model_name + drop_suffix + '-{}-{}'.format(args.dataset_name, args.seed))
-    model_path = args.pretrain_model_path
-    print(model_path)
-    if os.path.exists(model_path):
-        logger.info(f"LOAD PRETRAINED BACKBONE MODEL: {args.model_name}")
-        model = torch.load(model_path).to(args.device)
-        dataloaders = get_loaders(args.dataset_name, args.datahub_path, args.device, args.bsz, args.content, args.shuffle==1)
-    else:
-        logger.info(f"TRAIN BACKBONE MODEL: {args.model_name}")
-        model, dataloaders = pretrain(args.dataset_name, args.datahub_path, args.bsz, args.shuffle, args.model_name, \
-            args.epoch, args.lr, args.weight_decay, args.device, args.save_dir, args.dropout_ratio, args.is_dropoutnet, args.content)
-        if len(args.pretrain_model_path) > 0:
-            torch.save(model, model_path)
-            
-    # warmup train and test
-    logger.info("WARMUP TRAIN STARTS")
-    # avg_auc_list, avg_f1_list = [], []
-    # for i in range(args.runs):
-    #     model_v = copy.deepcopy(model).to(args.device)
-    #     auc_list, f1_list = run(model_v, dataloaders, args, args.model_name, args.warmup_model)
-    #     avg_auc_list.append(np.array(auc_list))
-    #     avg_f1_list.append(np.array(f1_list))
-    # avg_auc_list = list(np.stack(avg_auc_list).mean(axis=0))
-    # avg_f1_list = list(np.stack(avg_f1_list).mean(axis=0))
-    # logger.info("auc: {}".format(avg_auc_list))
-    # logger.info("f1: {}".format(avg_f1_list))
     
-    model_v = copy.deepcopy(model).to(args.device)
-    precision, recall, ndcg = run(model_v, dataloaders, args, args.model_name, args.warmup_model)
-    logger.info("P@K {:4f} R@K {:4f} NDCG@K {:4f}".format(precision, recall, ndcg))
+    torch.cuda.empty_cache()
+    if args.mode == "train":
+        # load or train pretrain models
+        model_path = args.pretrain_model_path
+        pretrain_dir = os.path.dirname(args.pretrain_model_path)
+        if args.pretrain_model_path and not os.path.exists(pretrain_dir):
+            os.makedirs(pretrain_dir, exist_ok=True)
+        print(model_path)
+        if os.path.exists(model_path):
+            logger.info(f"LOAD PRETRAINED BACKBONE MODEL: {args.model_name}")
+            model = torch.load(model_path).to(args.device)
+            dataloaders = get_loaders(args.dataset_name, args.datahub_path, args.device, args.bsz, args.content, args.shuffle==1)
+        else:
+            logger.info(f"TRAIN BACKBONE MODEL: {args.model_name}")
+            model, dataloaders = pretrain(args.dataset_name, args.datahub_path, args.bsz, args.shuffle, args.model_name, \
+                args.epoch, args.lr, args.weight_decay, args.device, args.save_dir, args.dropout_ratio, args.is_dropoutnet, args.content)
+            if len(args.pretrain_model_path) > 0:
+                torch.save(model, model_path)
+                
+        # warmup train and test
+        logger.info("WARMUP TRAIN STARTS")
+        model_v = copy.deepcopy(model).to(args.device)
+        precision, recall, ndcg = run(model_v, dataloaders, args, args.model_name, args.warmup_model)
+        logger.info("P@K {:4f} R@K {:4f} NDCG@K {:4f}".format(precision, recall, ndcg))
+    elif args.mode == "test":
+        logger.info(f"TEST {args.pretrain_model_path}")
+        model = torch.load(args.pretrain_model_path).to(args.device)
+        dataloaders = get_loaders(args.dataset_name, args.datahub_path, args.device, args.bsz, args.content, shuffle=False)
+        precision, recall, ndcg = test_ranking(model, dataloaders["cold_test"], args.device, topk=10)
+        logger.info("P@K {:4f} R@K {:4f} NDCG@K {:4f}".format(precision, recall, ndcg))
 
