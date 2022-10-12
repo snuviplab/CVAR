@@ -9,7 +9,7 @@ from sklearn.metrics import roc_auc_score, f1_score
 import argparse
 from logger import Logger
 from datetime import datetime
-from data import MovieLens1MColdStartDataLoader, TaobaoADColdStartDataLoader
+from data import MovieLens1MColdStartDataLoader, TaobaoADColdStartDataLoader, YahooColdStartDataLoader
 from model import FactorizationMachineModel, WideAndDeep, DeepFactorizationMachineModel, AdaptiveFactorizationNetwork, ProductNeuralNetworkModel
 from model import AttentionalFactorizationMachineModel, DeepCrossNetworkModel, MWUF, MetaE, CVAR
 from model.wd import WideAndDeep
@@ -52,8 +52,10 @@ def get_loaders(name, datahub_path, device, bsz, content_mode, shuffle):
         dataloaders = MovieLens1MColdStartDataLoader(name, path, device, bsz=bsz, content_mode=content_mode, shuffle=shuffle)
     elif name == 'taobaoAD':
         dataloaders = TaobaoADColdStartDataLoader(name, path, device, bsz=bsz, shuffle=shuffle)
+    elif name == 'yahoo':
+        dataloaders = YahooColdStartDataLoader(name, path, device, bsz=bsz, content_mode=content_mode, shuffle=shuffle)
     else:
-        raise ValueError('unkown dataset name: {}'.format(name))
+        raise ValueError('unknown dataset name: {}'.format(name))
     return dataloaders
 
 def get_model(name, dl):
@@ -298,12 +300,11 @@ def base_test(model,
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     # data set list
-    precision, recall, ndcg_score = test_ranking(model, dataloaders["cold_test"], device)
-    val_result = "[base model] evaluate on [cold test dataset] prec@k: {:.4f} rec@k: {:4f} ndcg@k: {:4f}".format(
-        precision, recall, ndcg_score
-    )
-    logger.info(val_result)
-    return (precision, recall, ndcg_score)
+    result = {}
+    topk_list = [1, 5, 10, 20]
+    for topk in topk_list:
+        result[topk] = test_ranking(model, dataloaders["cold_test"], device, topk=topk)
+    return result
 
 def metaE(model,
           dataloaders,
@@ -580,7 +581,8 @@ def cvar_simple(model,
                 )
             )
 
-        precision, recall, ndcg = cvar_test(test_dataset_name, test_loader, model, warm_model, device)
+        result = cvar_test(test_dataset_name, test_loader, model, warm_model, device)
+        precision, recall, ndcg = result[10]
         if precision > best_prec:
             logger.info("Save best precision model")
             torch.save(warm_model, save_best_prec)
@@ -592,21 +594,18 @@ def cvar_simple(model,
             torch.save(warm_model, save_best_ndcg)
         logger.info("[Epoch {}] loss: {:.4f}, main loss: {:.4f}, recon loss: {:.4f}, reg loss: {:.4f}".format(e + 1, a, b, c, d))
         logger.info("[Epoch {}] evaluate on [{} dataset] p: {:.4f}, r: {:.4f} n: {:.4f}".format(e + 1, test_dataset_name, precision, recall, ndcg))
-        if not e % 10:
-            p, r, n = cvar_test("cold_test", dataloaders["cold_test"], model, warm_model, device)
-            logger.info("[Epoch {}] evaluate on [cold test dataset] p: {:.4f}, r: {:.4f} n: {:.4f}".format(e + 1, p, r, n))
 
     # TEST WITH COLD_TEST
     save_latest = os.path.join(save_dir, 'latest_cvar.pth')
     torch.save(warm_model, save_latest)
     test_dataset_name = "cold_test"
     test_loader = dataloaders[test_dataset_name]
-    precision, recall, ndcg = cvar_test(test_dataset_name, test_loader, model, warm_model, device)
-    val_result = "[base model] evaluate on [cold test dataset] prec@k: {:.4f} rec@k: {:4f} ndcg@k: {:4f}".format(
-        precision, recall, ndcg
-    )
-    logger.info(val_result)
-    return (precision, recall, ndcg)
+    return cvar_test(test_dataset_name, test_loader, model, warm_model, device)
+    # val_result = "[base model] evaluate on [cold test dataset] prec@k: {:.4f} rec@k: {:4f} ndcg@k: {:4f}".format(
+    #     precision, recall, ndcg
+    # )
+    # logger.info(val_result)
+    # return (precision, recall, ndcg)
 
 def cvar_test(dataset_name, test_loader, model, warm_model, device, topk=10):
     model_v = copy.deepcopy(model).to(device)
@@ -624,7 +623,11 @@ def cvar_test(dataset_name, test_loader, model, warm_model, device, topk=10):
         origin_item_id_emb[indexes, ] = warm_item_id_emb
     
     logger.info("VALID WITH WARMED-UP EMBEDDINGS")
-    return test_ranking(model_v, test_loader, device, topk)
+    topk_list = [1, 5, 10, 20]
+    result = {}
+    for topk in topk_list:
+        result[topk] = test_ranking(model_v, test_loader, device, topk)
+    return result
 
 def run(model, dataloaders, args, model_name, warm):
     if warm == 'base':
@@ -689,13 +692,15 @@ if __name__ == '__main__':
         # warmup train and test
         logger.info("WARMUP TRAIN STARTS")
         model_v = copy.deepcopy(model).to(args.device)
-        precision, recall, ndcg = run(model_v, dataloaders, args, args.model_name, args.warmup_model)
-        logger.info("P@K {:4f} R@K {:4f} NDCG@K {:4f}".format(precision, recall, ndcg))
+        result = run(model_v, dataloaders, args, args.model_name, args.warmup_model)
+        for k, v in result.items():
+            precision, recall, ndcg = v    
+            logger.info("P@{} {:4f} R@{} {:4f} NDCG@{} {:4f}".format(k, precision, k, recall, k, ndcg))
         
     elif args.mode == "test":
         logger.info(f"TEST {args.pretrain_model_path}")
         dataloaders = get_loaders(args.dataset_name, args.datahub_path, args.device, args.bsz, args.content, shuffle=False)
-        topk_list = [10, 1, 5, 10, 20]
+        topk_list = [1, 5, 10, 20]
 
         if args.warmup_model == "cvar":
             for topk in topk_list:
