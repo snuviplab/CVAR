@@ -240,7 +240,7 @@ def pretrain(dataset_name,
          content_mode="all"):
     device = torch.device(device)
     if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+        os.makedirs(save_dir, exist_ok=True)
     logger.info("GET DATALOADER")
     dataloaders = get_loaders(dataset_name, datahub_name, device, bsz, content_mode, shuffle==1)
     logger.info("GET DATALOADER DONE")
@@ -269,7 +269,7 @@ def base(model,
     
     save_path = os.path.join(save_dir, 'model.pth')
     if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+        os.makedirs(save_dir, exist_ok=True)
     # data set list
     auc_list = []
     f1_list = []
@@ -298,7 +298,7 @@ def base_test(model,
     
     save_path = os.path.join(save_dir, 'model.pth')
     if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+        os.makedirs(save_dir, exist_ok=True)
     # data set list
     result = {}
     topk_list = [1, 5, 10, 20]
@@ -318,7 +318,7 @@ def metaE(model,
     device = torch.device(device)
     
     if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+        os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, 'model.pth')
     train_base = dataloaders['train_base']
     metaE_model = MetaE(model, warm_features=dataloaders.item_features, device=device).to(device)
@@ -384,7 +384,7 @@ def mwuf(model,
     device = torch.device(device)
     
     if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+        os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, 'model.pth')
     train_base = dataloaders['train_base']
     # train mwuf
@@ -465,7 +465,7 @@ def cvar(model,
     device = torch.device(device)
     
     if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+        os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, 'model.pth')
     train_base = dataloaders['train_base']
     # train cvar
@@ -539,7 +539,7 @@ def cvar_simple(model,
     device = torch.device(device)
     
     if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+        os.makedirs(save_dir, exist_ok=True)
 
     # train cvar
     logger.info("TRAINING CVAR")
@@ -656,7 +656,7 @@ if __name__ == '__main__':
     start_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_dir = os.path.join(BASE_DIR, "log")
     if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
+        os.makedirs(log_dir, exist_ok=True)
     logfile_name = args.log_file if args.log_file else f"{args.model_name}_{args.warmup_model}_{start_time}.log"
     log_file = os.path.join(log_dir, logfile_name)
     Logger.initialize(log_file)
@@ -703,12 +703,12 @@ if __name__ == '__main__':
         topk_list = [1, 5, 10, 20]
 
         if args.warmup_model == "cvar":
-            for topk in topk_list:
-                warm_model = torch.load(args.pretrain_model_path).to(args.device)
-                model = torch.load(args.pretrained_base_model_path).to(args.device)
-                warm_model.origin_item_emb = model.emb_layer[warm_model.item_id_name]
-                precision, recall, ndcg = cvar_test("cold_test", dataloaders["cold_test"], model, warm_model, args.device, topk=topk)
-                logger.info("P@{} {:4f} R@{} {:4f} NDCG@{} {:4f}".format(topk, precision, topk, recall, topk, ndcg))            
+            warm_model = torch.load(args.pretrain_model_path).to(args.device)
+            model = torch.load(args.pretrained_base_model_path).to(args.device)
+            result = cvar_test("cold_test", dataloaders["cold_test"], model, warm_model, args.device)
+            for k, v in result.items():
+                precision, recall, ndcg = v    
+                logger.info("P@{} {:4f} R@{} {:4f} NDCG@{} {:4f}".format(k, precision, k, recall, k, ndcg))
         else:
             model = torch.load(args.pretrain_model_path).to(args.device)
             for topk in topk_list:
