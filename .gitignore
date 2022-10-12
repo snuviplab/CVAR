@@ -4,7 +4,7 @@ datahub/movielens1M/*.pkl
 datahub/taobaoAD/*.pkl
 pretrain_backbones/*
 test.ipynb
-*sh
+scripts/
 *csv
 *dat
 *pkl
