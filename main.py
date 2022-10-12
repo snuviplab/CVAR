@@ -21,6 +21,7 @@ def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', default='train')
     parser.add_argument('--pretrain_model_path', default='')
+    parser.add_argument('--pretrained_base_model_path', default='')
     # parser.add_argument('--dataset_name', default='taobaoAD', help='required to be one of [movielens1M, taobaoAD]')
     parser.add_argument('--dataset_name', default='movielens', help='required to be one of [movielens, yahoo]')
     # parser.add_argument('--datahub_path', default='./datahub/')
@@ -578,6 +579,7 @@ def cvar_simple(model,
                     e + 1, a, b, c, d
                 )
             )
+
         precision, recall, ndcg = cvar_test(test_dataset_name, test_loader, model, warm_model, device)
         if precision > best_prec:
             logger.info("Save best precision model")
@@ -590,11 +592,15 @@ def cvar_simple(model,
             torch.save(warm_model, save_best_ndcg)
         logger.info("[Epoch {}] loss: {:.4f}, main loss: {:.4f}, recon loss: {:.4f}, reg loss: {:.4f}".format(e + 1, a, b, c, d))
         logger.info("[Epoch {}] evaluate on [{} dataset] p: {:.4f}, r: {:.4f} n: {:.4f}".format(e + 1, test_dataset_name, precision, recall, ndcg))
+        if not e % 10:
+            p, r, n = cvar_test("cold_test", dataloaders["cold_test"], model, warm_model, device)
+            logger.info("[Epoch {}] evaluate on [cold test dataset] p: {:.4f}, r: {:.4f} n: {:.4f}".format(e + 1, p, r, n))
 
     # TEST WITH COLD_TEST
     save_latest = os.path.join(save_dir, 'latest_cvar.pth')
     torch.save(warm_model, save_latest)
     test_dataset_name = "cold_test"
+    test_loader = dataloaders[test_dataset_name]
     precision, recall, ndcg = cvar_test(test_dataset_name, test_loader, model, warm_model, device)
     val_result = "[base model] evaluate on [cold test dataset] prec@k: {:.4f} rec@k: {:4f} ndcg@k: {:4f}".format(
         precision, recall, ndcg
@@ -602,7 +608,7 @@ def cvar_simple(model,
     logger.info(val_result)
     return (precision, recall, ndcg)
 
-def cvar_test(dataset_name, test_loader, model, warm_model, device):
+def cvar_test(dataset_name, test_loader, model, warm_model, device, topk=10):
     model_v = copy.deepcopy(model).to(device)
     logger.info(f"EVAL WITH {dataset_name}")
     # warm-up item id embedding (inference)
@@ -618,7 +624,7 @@ def cvar_test(dataset_name, test_loader, model, warm_model, device):
         origin_item_id_emb[indexes, ] = warm_item_id_emb
     
     logger.info("VALID WITH WARMED-UP EMBEDDINGS")
-    return test_ranking(model_v, test_loader, device)
+    return test_ranking(model_v, test_loader, device, topk)
 
 def run(model, dataloaders, args, model_name, warm):
     if warm == 'base':
@@ -656,6 +662,10 @@ if __name__ == '__main__':
     for arg, value in args._get_kwargs():
         logger.info(f"{arg}: {value}")
     logger.info("*"*50)    
+
+    if args.content not in ["all", "video_only", "text_only"]:
+        logger.error(f"Invalid option for content-mode: {args.content}")
+        raise Exception
     
     torch.cuda.empty_cache()
     if args.mode == "train":
@@ -681,10 +691,21 @@ if __name__ == '__main__':
         model_v = copy.deepcopy(model).to(args.device)
         precision, recall, ndcg = run(model_v, dataloaders, args, args.model_name, args.warmup_model)
         logger.info("P@K {:4f} R@K {:4f} NDCG@K {:4f}".format(precision, recall, ndcg))
+        
     elif args.mode == "test":
         logger.info(f"TEST {args.pretrain_model_path}")
-        model = torch.load(args.pretrain_model_path).to(args.device)
         dataloaders = get_loaders(args.dataset_name, args.datahub_path, args.device, args.bsz, args.content, shuffle=False)
-        precision, recall, ndcg = test_ranking(model, dataloaders["cold_test"], args.device, topk=10)
-        logger.info("P@K {:4f} R@K {:4f} NDCG@K {:4f}".format(precision, recall, ndcg))
+        topk_list = [10, 1, 5, 10, 20]
 
+        if args.warmup_model == "cvar":
+            for topk in topk_list:
+                warm_model = torch.load(args.pretrain_model_path).to(args.device)
+                model = torch.load(args.pretrained_base_model_path).to(args.device)
+                warm_model.origin_item_emb = model.emb_layer[warm_model.item_id_name]
+                precision, recall, ndcg = cvar_test("cold_test", dataloaders["cold_test"], model, warm_model, args.device, topk=topk)
+                logger.info("P@{} {:4f} R@{} {:4f} NDCG@{} {:4f}".format(topk, precision, topk, recall, topk, ndcg))            
+        else:
+            model = torch.load(args.pretrain_model_path).to(args.device)
+            for topk in topk_list:
+                precision, recall, ndcg = test_ranking(model, dataloaders["cold_test"], args.device, topk=topk)
+                logger.info("P@{} {:4f} R@{} {:4f} NDCG@{} {:4f}".format(topk, precision, topk, recall, topk, ndcg))
